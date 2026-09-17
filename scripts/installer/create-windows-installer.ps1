@@ -29,7 +29,13 @@ param(
     [Parameter(Mandatory=$true)][string]$PluginName,
     [Parameter(Mandatory=$true)][string]$Version,
     [string]$CompanyName = "Noizefield",
-    [string]$PluginURL = "https://noizefield.com"
+    [string]$PluginURL = "https://noizefield.com",
+    # The plugin's actual bundle/binary name (PRODUCT_NAME in CMakeLists.txt).
+    # Defaults to $PluginName (the CMake target name), which is correct when the
+    # two match. When they differ (e.g. target "VictorRSwagVocalComp" but
+    # PRODUCT_NAME "VRS Vocal Comp"), auto-detected from the plugin's
+    # CMakeLists.txt below if not passed explicitly.
+    [string]$ProductName
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,9 +46,19 @@ $BuildDir = $ApcPaths.BuildDir
 $ReleaseDir = $ApcPaths.ReleaseDir
 $PluginDir = Join-Path $ApcPaths.PluginsDir $PluginName
 
+if (-not $ProductName) {
+    $CMakeListsPath = Join-Path $PluginDir "CMakeLists.txt"
+    $ProductName = $PluginName
+    if (Test-Path $CMakeListsPath) {
+        $Match = Select-String -Path $CMakeListsPath -Pattern 'PRODUCT_NAME\s+"([^"]+)"' | Select-Object -First 1
+        if ($Match) { $ProductName = $Match.Matches[0].Groups[1].Value }
+    }
+}
+
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Creating Windows Installer" -ForegroundColor Cyan
 Write-Host "  Plugin: $PluginName" -ForegroundColor Cyan
+Write-Host "  Product (bundle) name: $ProductName" -ForegroundColor Cyan
 Write-Host "  Version: $Version" -ForegroundColor Cyan
 Write-Host "  Release: $ReleaseDir" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
@@ -62,9 +78,30 @@ if (-not (Test-Path $InnoPath)) {
 
 Write-Host "[OK] Inno Setup found" -ForegroundColor Green
 
-# Check for build artifacts
-$Vst3Path = Get-ChildItem -Path $BuildDir -Recurse -Filter "$PluginName.vst3" -ErrorAction SilentlyContinue | Select-Object -First 1
-$StandalonePath = Get-ChildItem -Path $BuildDir -Recurse -Filter "$PluginName.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+# Check for build artifacts. Prefer the exact CMake-target-name match (used
+# when PRODUCT_NAME == target name), but fall back to any bundle inside this
+# plugin's own build/plugins/<PluginName> tree - PRODUCT_NAME in CMakeLists.txt
+# can differ from the target name (e.g. "VRS Vocal Comp" vs "VictorRSwagVocalComp"),
+# and that subtree only ever contains this plugin's own artifacts.
+$ScopedBuildDir = Join-Path $BuildDir "plugins\$PluginName"
+
+function Find-ApcBundle([string]$Extension) {
+    $found = Get-ChildItem -Path $BuildDir -Recurse -Filter "$PluginName.$Extension" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $found -and (Test-Path $ScopedBuildDir)) {
+        # JUCE's own artefact layout: <Target>_artefacts/Release/<Format>/*.<ext>
+        # Scoping to it (rather than the whole plugin build tree) avoids picking
+        # up unrelated intermediate/helper binaries that share the extension.
+        $found = Get-ChildItem -Path $ScopedBuildDir -Recurse -Filter "*.$Extension" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '_artefacts[\\/]Release[\\/]' } | Select-Object -First 1
+        if (-not $found) {
+            $found = Get-ChildItem -Path $ScopedBuildDir -Recurse -Filter "*.$Extension" -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+    }
+    return $found
+}
+
+$Vst3Path = Find-ApcBundle -Extension "vst3"
+$StandalonePath = Find-ApcBundle -Extension "exe"
 
 if (-not $Vst3Path) {
     Write-Error "VST3 build not found. Please build the plugin first."
@@ -181,6 +218,7 @@ if (Test-Path $IconPath) {
 # Replace placeholders (order matters: longer tokens before shorter ones)
 $IssContent = $Template
 $IssContent = $IssContent.Replace('{#SetupIconLine}', $SetupIconLine)
+$IssContent = $IssContent.Replace('{#ProductName}', $ProductName)
 $IssContent = $IssContent.Replace('{#PluginName}', $PluginName)
 $IssContent = $IssContent.Replace('{#PluginVersion}', $Version)
 $IssContent = $IssContent.Replace('{#CompanyName}', $CompanyName)

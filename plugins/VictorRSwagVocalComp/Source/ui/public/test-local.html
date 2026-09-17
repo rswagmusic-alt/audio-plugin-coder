@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Victor R Swag Vocal Compressor</title>
+<!--
+  test-local.html - BROWSER TEST COPY of index.html (not shipped)
+  Generated at /impl Phase 4.0 from the approved design:
+    Design/v1-ui-spec.md, Design/v1-style-guide.md, .ideas/parameter-spec.md
+
+  Served to juce::WebBrowserComponent through the resource provider over
+  embedded binary data - never via data: URI or loadHTML().
+
+  Control IDs map 1:1 to APVTS parameter IDs:
+    amount, character, mix, output, sc_hpf (sliders), bypass (toggle)
+  Gain reduction arrives from C++ as a "grUpdate" event: { opto, fet } in dB.
+
+  webview-008 compliance:
+    - ALL JavaScript inline in ONE <script> block
+    - no type="module", no import/export, no <script src>
+    - no external CSS, fonts or images
+    - boots on document.readyState, not DOMContentLoaded alone
+    - sets window.__pluginBooted so C++ can detect a dead UI
+-->
+<style>
+  :root {
+    --bg:         #0B0D10;
+    --panel:      #12161B;
+    --line:       #232A32;
+    --text:       #E6EDF3;
+    --muted:      #7D8894;
+    --accent:     #00F5FF;
+    --accent-dim: #0A7F88;
+    --warn:       #FF4D6D;
+    --pad: 24px;
+  }
+
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 640px;
+    height: 420px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #plugin-ui {
+    width: 640px;
+    height: 420px;
+    padding: var(--pad);
+    padding-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    transition: opacity 120ms ease-out;
+  }
+  #plugin-ui.bypassed { opacity: 0.45; }
+
+  /* ---------- header ---------- */
+  .header {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+    flex: 0 0 auto;
+  }
+  .wordmark {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    transition: color 120ms ease-out;
+  }
+  .wordmark:hover { color: var(--text); }
+
+  #preset-select {
+    width: 180px;
+    height: 28px;
+    background-color: var(--panel);
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2300F5FF' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 0 26px 0 10px;
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 120ms ease-out;
+  }
+  #preset-select:hover { border-color: var(--accent-dim); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    height: 196px;
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    flex: 0 0 auto;
+  }
+
+  .control { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .value {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .zone {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    height: 11px;
+  }
+
+  /* ---------- knobs ---------- */
+  .knob {
+    position: relative;
+    cursor: ns-resize;
+    outline: none;
+    touch-action: none;
+  }
+  .knob svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .knob .k-body { fill: var(--panel); }
+  .knob .k-track {
+    fill: none;
+    stroke: var(--line);
+    stroke-linecap: round;
+    transition: stroke 120ms ease-out;
+  }
+  .knob:hover .k-track { stroke: #2C343D; }
+  .knob .k-arc {
+    fill: none;
+    stroke: var(--accent);
+    stroke-linecap: round;
+    opacity: 0.85;
+    transition: opacity 120ms ease-out;
+  }
+  .knob:hover .k-arc, .knob.dragging .k-arc { opacity: 1; }
+  .knob .k-notch { stroke: var(--muted); stroke-width: 1; opacity: 0.6; }
+  .knob .k-ind {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    background: var(--text);
+    border-radius: 1px;
+    transform-origin: 50% 100%;
+    opacity: 0.75;
+    transition: opacity 120ms ease-out;
+  }
+  .knob:hover .k-ind, .knob.dragging .k-ind { opacity: 1; }
+  .knob:focus-visible::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 1px solid var(--accent);
+    opacity: 0.4;
+    border-radius: 50%;
+  }
+
+  .knob.hero   { width: 150px; height: 150px; }
+  .knob.second { width: 90px;  height: 90px;  }
+  .knob.mini   { width: 56px;  height: 56px;  }
+
+  .knob.hero .k-ind   { height: 26px; margin-top: -75px; margin-left: -1px; }
+  .knob.second .k-ind { height: 16px; margin-top: -45px; margin-left: -1px; }
+  .knob.mini .k-ind   { height: 10px; margin-top: -28px; margin-left: -1px; }
+
+  /* the Amount knob is the only glowing element */
+  .knob.hero .k-arc {
+    filter: drop-shadow(0 0 6px rgba(0, 245, 255, calc(0.25 + var(--v, 0) * 0.45)));
+  }
+
+  /* ---------- meter ---------- */
+  .meter-row {
+    height: 44px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+  .meter-tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    width: 20px;
+  }
+  #gr-canvas {
+    flex: 1 1 auto;
+    height: 44px;
+    display: block;
+    border-radius: 4px;
+    cursor: crosshair;
+  }
+  #gr-readout {
+    width: 62px;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- utility ---------- */
+  .utility {
+    height: 60px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    flex: 0 0 auto;
+  }
+  .utility .control { gap: 4px; }
+  .utility .label { font-size: 9px; }
+  .utility .value { font-size: 11px; }
+  .spacer { flex: 1 1 auto; }
+
+  #bypass-btn {
+    width: 96px;
+    height: 32px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    outline: none;
+    transition: all 120ms ease-out;
+  }
+  #bypass-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  #bypass-btn.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #06181B;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0ms !important; }
+    .knob.hero .k-arc { filter: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="plugin-ui">
+
+  <div class="header">
+    <div class="wordmark">VRS Vocal Comp</div>
+    <select id="preset-select" title="Factory presets">
+      <option value="init">Init</option>
+      <option value="intimate">Intimate Vocal</option>
+      <option value="pop" selected>Pop Lead</option>
+      <option value="rap">Rap Upfront</option>
+      <option value="crush">Parallel Crush</option>
+      <option value="broadcast">Broadcast Even</option>
+    </select>
+  </div>
+
+  <div class="hero">
+    <div class="control">
+      <div class="label">Character</div>
+      <div class="knob second" id="character-knob" tabindex="0" role="slider"
+           data-param="character" data-min="0" data-max="100" data-default="50"
+           data-unit="%" data-stroke="5">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="34"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="character-value">50%</div>
+      <div class="zone" id="character-zone">Balanced</div>
+    </div>
+
+    <div class="control">
+      <div class="label">Amount</div>
+      <div class="knob hero" id="amount-knob" tabindex="0" role="slider"
+           data-param="amount" data-min="0" data-max="100" data-default="35"
+           data-unit="%" data-stroke="7">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="33"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="amount-value">35%</div>
+      <div class="zone"></div>
+    </div>
+
+    <div class="control">
+      <div class="label">Mix</div>
+      <div class="knob second" id="mix-knob" tabindex="0" role="slider"
+           data-param="mix" data-min="0" data-max="100" data-default="100"
+           data-unit="%" data-stroke="5">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="34"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="mix-value">100%</div>
+      <div class="zone"></div>
+    </div>
+  </div>
+
+  <div class="meter-row">
+    <div class="meter-tag">GR</div>
+    <canvas id="gr-canvas" title="Gain reduction - hover to split by stage"></canvas>
+    <div id="gr-readout">-0.0 dB</div>
+  </div>
+
+  <div class="utility">
+    <div class="control">
+      <div class="label">SC HPF</div>
+      <div class="knob mini" id="sc_hpf-knob" tabindex="0" role="slider"
+           data-param="sc_hpf" data-min="20" data-max="300" data-default="85"
+           data-unit="Hz" data-taper="log" data-stroke="4">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="33"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="sc_hpf-value">85 Hz</div>
+    </div>
+
+    <div class="control">
+      <div class="label">Output</div>
+      <div class="knob mini" id="output-knob" tabindex="0" role="slider"
+           data-param="output" data-min="-12" data-max="12" data-default="0"
+           data-unit="dB" data-bipolar="1" data-stroke="4">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="33"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+          <line class="k-notch" x1="50" y1="4" x2="50" y2="11"></line>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="output-value">+0.0 dB</div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <button id="bypass-btn" type="button">Bypass</button>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   Boot-time backend detection.
+   MUST run before the interop block below, which installs a
+   placeholder window.__JUCE__ when no native backend is present.
+   ============================================================ */
+var JUCE_NATIVE = (typeof window.__JUCE__ !== "undefined");
+
+/* ============================================================
+   BEGIN inlined JUCE webview-interop
+   Source: _tools/JUCE/modules/juce_gui_extra/native/typescript/
+           webview-interop/dist/index.js  (JUCE 9.0.1)
+   Inlined with its `export { ... }` block replaced by a
+   window.Juce assignment - ES6 modules and external <script src>
+   fail silently in JUCE WebView (webview-008).
+   ============================================================ */
+/*!
+  ==============================================================================
+
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
+
+   JUCE is an open source framework subject to commercial or open source
+   licensing.
+
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
+
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-9-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
+
+   Or:
+
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
+
+  ==============================================================================
+*/
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __typeError = (msg) => {
+  throw TypeError(msg);
+};
+var __objRest = (source, exclude) => {
+  var target = {};
+  for (var prop in source)
+    if (__hasOwnProp.call(source, prop) && exclude.indexOf(prop) < 0)
+      target[prop] = source[prop];
+  if (source != null && __getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(source)) {
+      if (exclude.indexOf(prop) < 0 && __propIsEnum.call(source, prop))
+        target[prop] = source[prop];
+    }
+  return target;
+};
+var __accessCheck = (obj, member, msg) => member.has(obj) || __typeError("Cannot " + msg);
+var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot add the same private member more than once") : member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
+
+// src/check_native_interop.ts
+var JuceInitialisationData = class {
+  constructor() {
+    this.__juce__platform = [];
+    this.__juce__functions = [];
+    this.__juce__registeredGlobalEventIds = [];
+    this.__juce__sliders = [];
+    this.__juce__toggles = [];
+    this.__juce__comboBoxes = [];
+  }
+};
+var ListenerList = class {
+  constructor() {
+    this.listeners = /* @__PURE__ */ new Map();
+    this.listenerId = 0;
+  }
+  addListener(fn) {
+    const newListenerId = this.listenerId++;
+    this.listeners.set(newListenerId, fn);
+    return newListenerId;
+  }
+  removeListener(id) {
+    if (this.listeners.has(id)) {
+      this.listeners.delete(id);
+    }
+  }
+  callListeners(payload) {
+    for (const [, value] of this.listeners) {
+      value(payload);
+    }
+  }
+};
+var EventListenerList = class {
+  constructor() {
+    this.eventListeners = /* @__PURE__ */ new Map();
+  }
+  addEventListener(eventId, fn) {
+    let list = this.eventListeners.get(eventId);
+    if (!list) {
+      list = new ListenerList();
+      this.eventListeners.set(eventId, list);
+    }
+    const id = list.addListener(fn);
+    return [eventId, id];
+  }
+  removeEventListener([eventId, id]) {
+    var _a;
+    (_a = this.eventListeners.get(eventId)) == null ? void 0 : _a.removeListener(id);
+  }
+  emitEvent(eventId, object) {
+    var _a;
+    (_a = this.eventListeners.get(eventId)) == null ? void 0 : _a.callListeners(object);
+  }
+};
+var Backend = class {
+  constructor() {
+    this.listeners = new EventListenerList();
+  }
+  /**
+   * Registers a function to listen to events emitted by the backend. The backend can
+   * emit such events by calling WebBrowserComponent::emitEventIfBrowserIsVisible.
+   *
+   * @param eventId The identifier of the emitted event.
+   * @param fn      The function to be called when the event is received.
+   */
+  addEventListener(eventId, fn) {
+    return this.listeners.addEventListener(eventId, fn);
+  }
+  removeEventListener(handle) {
+    this.listeners.removeEventListener(handle);
+  }
+  /**
+   * Sends an event from the frontend to the native backend.
+   *
+   * @param eventId The identifier of the event to emit.
+   * @param object  The payload to send along with the event.
+   */
+  emitEvent(eventId, object) {
+    window.__JUCE__.postMessage(
+      JSON.stringify({ eventId, payload: object })
+    );
+  }
+  /**
+   * Internal function called by the JUCE backend implementation.
+   *
+   * User Javascript code running inside the WebView should not call this
+   * function.
+   *
+   * @param eventId The identifier of the event to emit.
+   * @param object  The JSON-encoded payload to send along with the event.
+   */
+  emitByBackend(eventId, object) {
+    this.listeners.emitEvent(eventId, JSON.parse(object));
+  }
+};
+if (typeof window.__JUCE__ !== "undefined" && typeof window.__JUCE__.getAndroidUserScripts !== "undefined" && typeof window.inAndroidUserScriptEval === "undefined") {
+  window.inAndroidUserScriptEval = true;
+  (0, eval)(window.__JUCE__.getAndroidUserScripts());
+  delete window.inAndroidUserScriptEval;
+}
+if (typeof window.__JUCE__ === "undefined") {
+  console.warn(
+    "The 'window.__JUCE__' object is undefined. Native integration features will not work. Defining a placeholder 'window.__JUCE__' object."
+  );
+  window.__JUCE__ = {};
+}
+if (typeof window.__JUCE__.postMessage === "undefined") {
+  window.__JUCE__.postMessage = function() {
+  };
+}
+if (typeof window.__JUCE__.initialisationData === "undefined") {
+  window.__JUCE__.initialisationData = new JuceInitialisationData();
+}
+if (typeof window.__JUCE__.backend === "undefined") {
+  window.__JUCE__.backend = new Backend();
+}
+
+// src/index.ts
+var PromiseHandler = class {
+  constructor() {
+    this.lastPromiseId = 0;
+    this.promises = /* @__PURE__ */ new Map();
+    window.__JUCE__.backend.addEventListener("__juce__complete", (payload) => {
+      const { promiseId, result } = payload;
+      const entry = this.promises.get(promiseId);
+      if (entry) {
+        entry.resolve(result);
+        this.promises.delete(promiseId);
+      }
+    });
+  }
+  createPromise() {
+    const promiseId = this.lastPromiseId++;
+    const result = new Promise((resolve, reject) => {
+      this.promises.set(promiseId, { resolve, reject });
+    });
+    return [promiseId, result];
+  }
+};
+var promiseHandler = new PromiseHandler();
+function getNativeFunction(name) {
+  if (!window.__JUCE__.initialisationData.__juce__functions.includes(name))
+    console.warn(
+      `Creating native function binding for '${name}', which is unknown to the backend`
+    );
+  const f = (...args) => {
+    const [promiseId, result] = promiseHandler.createPromise();
+    window.__JUCE__.backend.emitEvent("__juce__invoke", {
+      name,
+      params: args,
+      resultId: promiseId
+    });
+    return result;
+  };
+  return f;
+}
+var versionCheckFunctionName = "__juce__reportJuceFrameworkWebViewVersion";
+if (window.__JUCE__.initialisationData.__juce__functions.includes(
+  versionCheckFunctionName
+)) {
+  getNativeFunction(versionCheckFunctionName)(
+    "1.0.0"
+  ).then((backendVersion) => {
+    if (backendVersion !== "1.0.0") {
+      console.warn(
+        `The backend expected a @juce-framework/webview version of ${backendVersion}, but got ${"1.0.0"}. You should use matching backend and frontend versions.`
+      );
+    }
+  });
+}
+var ListenerList2 = class {
+  constructor() {
+    this.listeners = /* @__PURE__ */ new Map();
+    this.listenerId = 0;
+  }
+  addListener(fn) {
+    const newListenerId = this.listenerId++;
+    this.listeners.set(newListenerId, fn);
+    return newListenerId;
+  }
+  removeListener(id) {
+    if (this.listeners.has(id)) {
+      this.listeners.delete(id);
+    }
+  }
+  callListeners() {
+    for (const [, value] of this.listeners) {
+      value();
+    }
+  }
+};
+var BasicControl_valueChangedEventId = "valueChanged";
+var BasicControl_propertiesChangedId = "propertiesChanged";
+var SliderControl_sliderDragStartedEventId = "sliderDragStarted";
+var SliderControl_sliderDragEndedEventId = "sliderDragEnded";
+var SliderState = class {
+  constructor(name) {
+    this.scaledValue = 0;
+    this.properties = {
+      start: 0,
+      end: 1,
+      skew: 1,
+      name: "",
+      label: "",
+      numSteps: 100,
+      interval: 0,
+      parameterIndex: -1
+    };
+    this.valueChangedEvent = new ListenerList2();
+    this.propertiesChangedEvent = new ListenerList2();
+    if (!window.__JUCE__.initialisationData.__juce__sliders.includes(name))
+      console.warn(
+        "Creating SliderState for '" + name + "', which is unknown to the backend"
+      );
+    this.name = name;
+    this.identifier = "__juce__slider" + this.name;
+    window.__JUCE__.backend.addEventListener(
+      this.identifier,
+      (event) => this.handleEvent(event)
+    );
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: "requestInitialUpdate"
+    });
+  }
+  /**
+   * Sets the normalised value of the corresponding backend parameter. This value is always in the
+   * [0, 1] range (inclusive).
+   *
+   * The meaning of this range is the same as in the case of
+   * AudioProcessorParameter::getValue() (C++).
+   *
+   * @param {String} name
+   */
+  setNormalisedValue(newValue) {
+    this.scaledValue = this.snapToLegalValue(
+      this.normalisedToScaledValue(newValue)
+    );
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: BasicControl_valueChangedEventId,
+      value: this.scaledValue
+    });
+  }
+  /**
+   * This function should be called first thing when the user starts interacting with the slider.
+   */
+  sliderDragStarted() {
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: SliderControl_sliderDragStartedEventId
+    });
+  }
+  /**
+   * This function should be called when the user finished the interaction with the slider.
+   */
+  sliderDragEnded() {
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: SliderControl_sliderDragEndedEventId
+    });
+  }
+  /** Internal. */
+  handleEvent(event) {
+    const e = event;
+    if (e.eventType === BasicControl_valueChangedEventId) {
+      this.scaledValue = e.value;
+      this.valueChangedEvent.callListeners();
+    }
+    if (e.eventType === BasicControl_propertiesChangedId) {
+      let _a = e, { eventType: _ } = _a, rest = __objRest(_a, ["eventType"]);
+      this.properties = rest;
+      this.propertiesChangedEvent.callListeners();
+    }
+  }
+  /**
+   * Returns the scaled value of the parameter. This corresponds to the return value of
+   * NormalisableRange::convertFrom0to1() (C++). This value will differ from a linear
+   * [0, 1] range if a non-default NormalisableRange was set for the parameter.
+   */
+  getScaledValue() {
+    return this.scaledValue;
+  }
+  /**
+   * Returns the normalised value of the corresponding backend parameter. This value is always in the
+   * [0, 1] range (inclusive).
+   *
+   * The meaning of this range is the same as in the case of
+   * AudioProcessorParameter::getValue() (C++).
+   *
+   * @param {String} name
+   */
+  getNormalisedValue() {
+    return Math.pow(
+      (this.scaledValue - this.properties.start) / (this.properties.end - this.properties.start),
+      this.properties.skew
+    );
+  }
+  /** Internal. */
+  normalisedToScaledValue(normalisedValue) {
+    return Math.pow(normalisedValue, 1 / this.properties.skew) * (this.properties.end - this.properties.start) + this.properties.start;
+  }
+  /** Internal. */
+  snapToLegalValue(value) {
+    const interval = this.properties.interval;
+    if (interval == 0) return value;
+    const start = this.properties.start;
+    const clamp = (val, min = 0, max = 1) => Math.max(min, Math.min(max, val));
+    return clamp(
+      start + interval * Math.floor((value - start) / interval + 0.5),
+      this.properties.start,
+      this.properties.end
+    );
+  }
+};
+var sliderStates = /* @__PURE__ */ new Map();
+for (const sliderName of window.__JUCE__.initialisationData.__juce__sliders)
+  sliderStates.set(sliderName, new SliderState(sliderName));
+function getSliderState(name) {
+  let state = sliderStates.get(name);
+  if (!state) {
+    state = new SliderState(name);
+    sliderStates.set(name, state);
+  }
+  return state;
+}
+var ToggleState = class {
+  constructor(name) {
+    this.value = false;
+    this.properties = {
+      name: "",
+      parameterIndex: -1
+    };
+    this.valueChangedEvent = new ListenerList2();
+    this.propertiesChangedEvent = new ListenerList2();
+    if (!window.__JUCE__.initialisationData.__juce__toggles.includes(name))
+      console.warn(
+        "Creating ToggleState for '" + name + "', which is unknown to the backend"
+      );
+    this.name = name;
+    this.identifier = "__juce__toggle" + this.name;
+    window.__JUCE__.backend.addEventListener(
+      this.identifier,
+      (event) => this.handleEvent(event)
+    );
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: "requestInitialUpdate"
+    });
+  }
+  /** Returns the value corresponding to the associated WebToggleRelay's (C++) state. */
+  getValue() {
+    return this.value;
+  }
+  /** Informs the backend to change the associated WebToggleRelay's (C++) state. */
+  setValue(newValue) {
+    this.value = newValue;
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: BasicControl_valueChangedEventId,
+      value: this.value
+    });
+  }
+  /** Internal. */
+  handleEvent(event) {
+    const e = event;
+    if (e.eventType == BasicControl_valueChangedEventId) {
+      this.value = e.value;
+      this.valueChangedEvent.callListeners();
+    }
+    if (e.eventType == BasicControl_propertiesChangedId) {
+      let _a = e, { eventType: _ } = _a, rest = __objRest(_a, ["eventType"]);
+      this.properties = rest;
+      this.propertiesChangedEvent.callListeners();
+    }
+  }
+};
+var toggleStates = /* @__PURE__ */ new Map();
+for (const name of window.__JUCE__.initialisationData.__juce__toggles)
+  toggleStates.set(name, new ToggleState(name));
+function getToggleState(name) {
+  let state = toggleStates.get(name);
+  if (!state) {
+    state = new ToggleState(name);
+    toggleStates.set(name, state);
+  }
+  return state;
+}
+var ComboBoxState = class {
+  constructor(name) {
+    this.value = 0;
+    this.properties = {
+      name: "",
+      parameterIndex: -1,
+      choices: []
+    };
+    this.valueChangedEvent = new ListenerList2();
+    this.propertiesChangedEvent = new ListenerList2();
+    if (!window.__JUCE__.initialisationData.__juce__comboBoxes.includes(name))
+      console.warn(
+        "Creating ComboBoxState for '" + name + "', which is unknown to the backend"
+      );
+    this.name = name;
+    this.identifier = "__juce__comboBox" + this.name;
+    window.__JUCE__.backend.addEventListener(
+      this.identifier,
+      (event) => this.handleEvent(event)
+    );
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: "requestInitialUpdate"
+    });
+  }
+  /**
+   * Returns the value corresponding to the associated WebComboBoxRelay's (C++) state.
+   *
+   * This is an index identifying which element of the properties.choices array is currently
+   * selected.
+   */
+  getChoiceIndex() {
+    return Math.round(this.value * (this.properties.choices.length - 1));
+  }
+  /**
+   * Informs the backend to change the associated WebComboBoxRelay's (C++) state.
+   *
+   * This should be called with the index identifying the selected element from the
+   * properties.choices array.
+   */
+  setChoiceIndex(index) {
+    const numItems = this.properties.choices.length;
+    this.value = numItems > 1 ? index / (numItems - 1) : 0;
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: BasicControl_valueChangedEventId,
+      value: this.value
+    });
+  }
+  /** Internal. */
+  handleEvent(event) {
+    const e = event;
+    if (e.eventType == BasicControl_valueChangedEventId) {
+      this.value = e.value;
+      this.valueChangedEvent.callListeners();
+    }
+    if (e.eventType == BasicControl_propertiesChangedId) {
+      let _a = e, { eventType: _ } = _a, rest = __objRest(_a, ["eventType"]);
+      this.properties = rest;
+      this.propertiesChangedEvent.callListeners();
+    }
+  }
+};
+var comboBoxStates = /* @__PURE__ */ new Map();
+for (const name of window.__JUCE__.initialisationData.__juce__comboBoxes)
+  comboBoxStates.set(name, new ComboBoxState(name));
+function getComboBoxState(name) {
+  let state = comboBoxStates.get(name);
+  if (!state) {
+    state = new ComboBoxState(name);
+    comboBoxStates.set(name, state);
+  }
+  return state;
+}
+function getBackendResourceAddress(path) {
+  const platform = window.__JUCE__.initialisationData.__juce__platform.length > 0 ? window.__JUCE__.initialisationData.__juce__platform[0] : "";
+  if (platform == "windows" || platform == "android")
+    return "https://juce.backend/" + path;
+  if (platform == "macos" || platform == "ios" || platform == "linux")
+    return "juce://juce.backend/" + path;
+  console.warn(
+    "getBackendResourceAddress() called, but no JUCE native backend is detected."
+  );
+  return path;
+}
+var _ControlParameterIndexUpdater_instances, getControlParameterIndex_fn;
+var ControlParameterIndexUpdater = class {
+  constructor(controlParameterIndexAnnotation) {
+    __privateAdd(this, _ControlParameterIndexUpdater_instances);
+    this.lastElement = null;
+    this.lastControlParameterIndex = -1;
+    this.controlParameterIndexAnnotation = controlParameterIndexAnnotation;
+  }
+  handleMouseMove(event) {
+    const currentElement = document.elementFromPoint(
+      event.clientX,
+      event.clientY
+    );
+    if (currentElement === this.lastElement) return;
+    this.lastElement = currentElement;
+    let controlParameterIndex = -1;
+    if (currentElement !== null)
+      controlParameterIndex = __privateMethod(this, _ControlParameterIndexUpdater_instances, getControlParameterIndex_fn).call(this, currentElement);
+    if (controlParameterIndex === this.lastControlParameterIndex) return;
+    this.lastControlParameterIndex = controlParameterIndex;
+    window.__JUCE__.backend.emitEvent(
+      "__juce__controlParameterIndexChanged",
+      controlParameterIndex
+    );
+  }
+};
+_ControlParameterIndexUpdater_instances = new WeakSet();
+//==============================================================================
+getControlParameterIndex_fn = function(element) {
+  const isValidNonRootElement = (e) => {
+    return e !== null && e !== document.documentElement;
+  };
+  while (isValidNonRootElement(element)) {
+    if (element.hasAttribute(this.controlParameterIndexAnnotation)) {
+      const attribute = element.getAttribute(
+        this.controlParameterIndexAnnotation
+      );
+      const attributeValue = Number(attribute);
+      if (attribute === null || Number.isNaN(attributeValue)) {
+        console.error(
+          `Expected the "${this.controlParameterIndexAnnotation}" attribute to be a number,
+             got "${attributeValue}". You should set this attribute to the parameterIndex member
+             of the corresponding SliderState, ToggleState or ComboBoxState object's properties.`
+        );
+        return -1;
+      }
+      return attributeValue;
+    }
+    element = element.parentElement;
+  }
+  return -1;
+};
+
+window.Juce = {
+  ControlParameterIndexUpdater: ControlParameterIndexUpdater,
+  getBackendResourceAddress: getBackendResourceAddress,
+  getComboBoxState: getComboBoxState,
+  getNativeFunction: getNativeFunction,
+  getSliderState: getSliderState,
+  getToggleState: getToggleState
+};
+/* ===================== END inlined JUCE webview-interop ===================== */
+
+/* ============================================================
+   VictorRSwagVocalComp - UI
+   Built from Design/v1-ui-spec.md + Design/v1-style-guide.md
+   Parameter IDs from .ideas/parameter-spec.md
+   ============================================================ */
+(function () {
+  "use strict";
+
+  var Juce = window.Juce;
+
+  /* ---------- geometry ---------- */
+  var R = 42;
+  var CIRC = 2 * Math.PI * R;       /* 263.894 */
+  var SWEEP = CIRC * 0.75;          /* 270 degrees = 197.920 */
+
+  /* ---------- knob registry ---------- */
+  var knobs = {};
+
+  /* Fallback tapers, used only when there is no native backend
+     (browser testing). With JUCE attached, the C++ NormalisableRange
+     owns the mapping and we read it from sliderState.properties. */
+  function localToNorm(k, value) {
+    if (k.taper === "log") return Math.log(value / k.min) / Math.log(k.max / k.min);
+    return (value - k.min) / (k.max - k.min);
+  }
+  function localFromNorm(k, n) {
+    n = Math.max(0, Math.min(1, n));
+    if (k.taper === "log") return k.min * Math.pow(k.max / k.min, n);
+    return k.min + n * (k.max - k.min);
+  }
+
+  /* Normalised <-> scaled, preferring the backend's own range */
+  function getNorm(k) {
+    if (k.state) return clamp01(k.state.getNormalisedValue());
+    return clamp01(localToNorm(k, k.value));
+  }
+  function getScaled(k) {
+    if (k.state) return k.state.getScaledValue();
+    return k.value;
+  }
+  function valueToNorm(k, v) {
+    if (k.state && k.state.properties && k.state.properties.end !== k.state.properties.start) {
+      var p = k.state.properties;
+      return clamp01(Math.pow((v - p.start) / (p.end - p.start), p.skew || 1));
+    }
+    return clamp01(localToNorm(k, v));
+  }
+  function applyNorm(k, n) {
+    n = clamp01(n);
+    if (k.state) {
+      k.state.setNormalisedValue(n);   /* backend echoes back via valueChangedEvent */
+    } else {
+      k.value = localFromNorm(k, n);
+    }
+    render(k);
+  }
+  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+  /* ---------- formatting ---------- */
+  function formatValue(k, v) {
+    if (k.unit === "%")  return Math.round(v) + "%";
+    if (k.unit === "Hz") return Math.round(v) + " Hz";
+    if (k.unit === "dB") return (v >= 0 ? "+" : "") + v.toFixed(1) + " dB";
+    return v.toFixed(1);
+  }
+  function characterZone(v) {
+    if (v < 33) return "Smooth";
+    if (v > 66) return "Aggressive";
+    return "Balanced";
+  }
+
+  /* ---------- rendering ---------- */
+  function render(k) {
+    var n = getNorm(k);
+    var scaled = getScaled(k);
+
+    var len, start;
+    if (k.bipolar) {
+      var half = SWEEP / 2;
+      if (n >= 0.5) { start = half; len = (n - 0.5) * SWEEP; }
+      else          { len = (0.5 - n) * SWEEP; start = half - len; }
+    } else {
+      start = 0;
+      len = n * SWEEP;
+    }
+    k.arc.setAttribute("stroke-dasharray", len + " " + CIRC);
+    k.arc.setAttribute("stroke-dashoffset", -start);
+
+    k.ind.style.transform = "rotate(" + (-135 + n * 270) + "deg)";
+    k.el.style.setProperty("--v", n.toFixed(3));
+
+    if (k.valueEl) k.valueEl.textContent = formatValue(k, scaled);
+    if (k.param === "character" && k.zoneEl) k.zoneEl.textContent = characterZone(scaled);
+    k.el.setAttribute("aria-valuenow", scaled.toFixed(2));
+  }
+
+  /* ---------- knob construction ---------- */
+  function buildKnob(el) {
+    var k = {
+      el: el,
+      param: el.dataset.param,
+      min: parseFloat(el.dataset.min),
+      max: parseFloat(el.dataset.max),
+      def: parseFloat(el.dataset.default),
+      unit: el.dataset.unit,
+      taper: el.dataset.taper || "linear",
+      bipolar: el.dataset.bipolar === "1",
+      stroke: parseFloat(el.dataset.stroke),
+      arc: el.querySelector(".k-arc"),
+      track: el.querySelector(".k-track"),
+      ind: el.querySelector(".k-ind"),
+      valueEl: document.getElementById(el.dataset.param + "-value"),
+      zoneEl: document.getElementById(el.dataset.param + "-zone"),
+      value: 0,
+      state: null
+    };
+    k.value = k.def;
+
+    k.track.setAttribute("stroke-width", k.stroke);
+    k.arc.setAttribute("stroke-width", k.stroke);
+    k.track.setAttribute("transform", "rotate(135 50 50)");
+    k.arc.setAttribute("transform", "rotate(135 50 50)");
+    k.track.setAttribute("stroke-dasharray", SWEEP + " " + CIRC);
+    el.setAttribute("aria-valuemin", k.min);
+    el.setAttribute("aria-valuemax", k.max);
+    el.setAttribute("aria-label", k.param);
+
+    /* bind to the backend parameter of the same ID */
+    if (JUCE_NATIVE) {
+      k.state = Juce.getSliderState(k.param);
+      k.state.valueChangedEvent.addListener(function () { render(k); });
+      k.state.propertiesChangedEvent.addListener(function () { render(k); });
+    }
+
+    attachKnobEvents(k);
+    render(k);
+    knobs[k.param] = k;
+    return k;
+  }
+
+  function attachKnobEvents(k) {
+    var dragging = false, lastY = 0;
+
+    k.el.addEventListener("pointerdown", function (e) {
+      dragging = true;
+      lastY = e.clientY;
+      k.el.classList.add("dragging");
+      k.el.setPointerCapture(e.pointerId);
+      if (k.state) k.state.sliderDragStarted();
+      e.preventDefault();
+    });
+
+    k.el.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      var dy = lastY - e.clientY;
+      lastY = e.clientY;
+      var sens = e.shiftKey ? 1000 : 200;   /* px of travel for full range */
+      applyNorm(k, getNorm(k) + dy / sens);
+    });
+
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      k.el.classList.remove("dragging");
+      if (k.state) k.state.sliderDragEnded();
+      if (e.pointerId !== undefined && k.el.hasPointerCapture(e.pointerId)) {
+        k.el.releasePointerCapture(e.pointerId);
+      }
+    }
+    k.el.addEventListener("pointerup", endDrag);
+    k.el.addEventListener("pointercancel", endDrag);
+
+    k.el.addEventListener("dblclick", function () {
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, valueToNorm(k, k.def));
+      if (k.state) k.state.sliderDragEnded();
+    });
+
+    k.el.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var step = (e.shiftKey ? 0.005 : 0.01) * (e.deltaY < 0 ? 1 : -1);
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, getNorm(k) + step);
+      if (k.state) k.state.sliderDragEnded();
+    }, { passive: false });
+
+    k.el.addEventListener("keydown", function (e) {
+      var step = e.shiftKey ? 0.005 : 0.02;
+      var dir = 0;
+      if (e.key === "ArrowUp" || e.key === "ArrowRight") dir = 1;
+      else if (e.key === "ArrowDown" || e.key === "ArrowLeft") dir = -1;
+      if (dir === 0) return;
+      e.preventDefault();
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, getNorm(k) + dir * step);
+      if (k.state) k.state.sliderDragEnded();
+    });
+  }
+
+  /* ---------- bypass ---------- */
+  var bypassState = null;
+  var bypassed = false;
+  var bypassBtn = document.getElementById("bypass-btn");
+  var pluginUI = document.getElementById("plugin-ui");
+
+  function renderBypass() {
+    bypassBtn.classList.toggle("on", bypassed);
+    pluginUI.classList.toggle("bypassed", bypassed);
+    bypassBtn.setAttribute("aria-pressed", bypassed ? "true" : "false");
+  }
+
+  function setupBypass() {
+    if (JUCE_NATIVE) {
+      bypassState = Juce.getToggleState("bypass");
+      bypassState.valueChangedEvent.addListener(function () {
+        bypassed = bypassState.getValue();
+        renderBypass();
+      });
+      bypassed = bypassState.getValue();
+    }
+    bypassBtn.addEventListener("click", function () {
+      bypassed = !bypassed;
+      if (bypassState) bypassState.setValue(bypassed);
+      renderBypass();
+    });
+    renderBypass();
+  }
+
+  /* ---------- presets ---------- */
+  var PRESETS = {
+    init:      { amount: 35, character: 50, mix: 100, output: 0, sc_hpf: 85 },
+    intimate:  { amount: 25, character: 15, mix: 100, output: 0, sc_hpf: 70 },
+    pop:       { amount: 45, character: 55, mix: 100, output: 0, sc_hpf: 85 },
+    rap:       { amount: 60, character: 85, mix: 100, output: 0, sc_hpf: 100 },
+    crush:     { amount: 85, character: 90, mix: 45,  output: 0, sc_hpf: 110 },
+    broadcast: { amount: 40, character: 30, mix: 100, output: 0, sc_hpf: 90 }
+  };
+
+  function setupPresets() {
+    document.getElementById("preset-select").addEventListener("change", function (e) {
+      var p = PRESETS[e.target.value];
+      if (!p) return;
+      for (var key in p) {
+        var k = knobs[key];
+        if (!k) continue;
+        if (k.state) k.state.sliderDragStarted();
+        applyNorm(k, valueToNorm(k, p[key]));
+        if (k.state) k.state.sliderDragEnded();
+      }
+    });
+  }
+
+  /* ---------- gain reduction meter ---------- */
+  var canvas = document.getElementById("gr-canvas");
+  var ctx = canvas.getContext("2d");
+  var MAX_GR = 20;                 /* dB, full scale */
+  var hovering = false;
+  var splitMix = 0;                /* 0 = summed, 1 = per-stage */
+  var grOpto = 0, grFet = 0;       /* displayed, ballistic */
+  var targetOpto = 0, targetFet = 0;  /* pushed from C++ */
+  var readout = document.getElementById("gr-readout");
+
+  canvas.addEventListener("mouseenter", function () { hovering = true; });
+  canvas.addEventListener("mouseleave", function () { hovering = false; });
+
+  /* C++ pushes {opto, fet} in dB of reduction via
+     webView->emitEventIfBrowserIsVisible("grUpdate", ...) */
+  function setGR(opto, fet) {
+    targetOpto = Math.max(0, Math.min(MAX_GR, opto || 0));
+    targetFet  = Math.max(0, Math.min(MAX_GR, fet  || 0));
+  }
+
+  function setupMeterFeed() {
+    /* Test hook: lets test-local.html (or a devtools console) drive the
+       meter without a backend. Never called by the plugin itself. */
+    window.__vrsSetGR = setGR;
+
+    if (!JUCE_NATIVE) return;
+    window.__JUCE__.backend.addEventListener("grUpdate", function (ev) {
+      if (!ev) return;
+      setGR(ev.opto, ev.fet);
+    });
+  }
+
+  function sizeCanvas() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function fillFor(total, x, w) {
+    var g = ctx.createLinearGradient(x, 0, x + w, 0);
+    if (total > 12) { g.addColorStop(0, "#8A2540"); g.addColorStop(1, "#FF4D6D"); }
+    else            { g.addColorStop(0, "#0A7F88"); g.addColorStop(1, "#00F5FF"); }
+    return g;
+  }
+
+  function drawMeter() {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = "#12161B";
+    roundRect(0, 0, w, h, 4);
+    ctx.fill();
+
+    var total = Math.min(MAX_GR, grOpto + grFet);
+
+    if (splitMix < 1) {
+      ctx.globalAlpha = 1 - splitMix;
+      var bh = 16, by = (h - bh) / 2;
+      var bw = (total / MAX_GR) * (w - 16);
+      if (bw > 0.5) {
+        ctx.fillStyle = fillFor(total, 8, w - 16);
+        roundRect(8, by, bw, bh, 3);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (splitMix > 0) {
+      ctx.globalAlpha = splitMix;
+      var rows = [
+        { label: "OPTO", v: grOpto, y: 6 },
+        { label: "FET",  v: grFet,  y: 24 }
+      ];
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        ctx.fillStyle = "#7D8894";
+        ctx.font = "8px -apple-system, system-ui, sans-serif";
+        ctx.textBaseline = "middle";
+        ctx.fillText(r.label, 8, r.y + 7);
+        var x0 = 38, bw2 = (r.v / MAX_GR) * (w - 46);
+        ctx.fillStyle = "#1A2027";
+        roundRect(x0, r.y, w - 46, 14, 3);
+        ctx.fill();
+        if (bw2 > 0.5) {
+          ctx.fillStyle = fillFor(r.v, x0, w - 46);
+          roundRect(x0, r.y, bw2, 14, 3);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.globalAlpha = 0.5 * (1 - splitMix);
+    var ticks = [3, 6, 12, 20];
+    ctx.strokeStyle = "#232A32";
+    ctx.fillStyle = "#7D8894";
+    ctx.font = "8px -apple-system, system-ui, sans-serif";
+    ctx.textBaseline = "top";
+    for (var t = 0; t < ticks.length; t++) {
+      var tx = 8 + (ticks[t] / MAX_GR) * (w - 16);
+      ctx.beginPath();
+      ctx.moveTo(tx, 4); ctx.lineTo(tx, 10);
+      ctx.stroke();
+      ctx.fillText("-" + ticks[t], tx - 6, h - 12);
+    }
+    ctx.globalAlpha = 1;
+
+    readout.textContent = "-" + total.toFixed(1) + " dB";
+    readout.style.color = total > 12 ? "#FF4D6D" : "#E6EDF3";
+  }
+
+  /* ---------- animation loop ---------- */
+  var lastT = 0;
+  function frame(t) {
+    var dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0.016;
+    lastT = t;
+
+    var target = hovering ? 1 : 0;
+    splitMix += (target - splitMix) * Math.min(1, dt / 0.18);
+    if (Math.abs(target - splitMix) < 0.002) splitMix = target;
+
+    /* instant attack, ~180ms release */
+    var rel = Math.exp(-dt / 0.18);
+    grOpto = targetOpto > grOpto ? targetOpto : targetOpto + (grOpto - targetOpto) * rel;
+    grFet  = targetFet  > grFet  ? targetFet  : targetFet  + (grFet  - targetFet)  * rel;
+
+    drawMeter();
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- boot ---------- */
+  function init() {
+    var els = document.querySelectorAll(".knob");
+    for (var i = 0; i < els.length; i++) buildKnob(els[i]);
+    setupBypass();
+    setupPresets();
+    setupMeterFeed();
+    sizeCanvas();
+    window.addEventListener("resize", sizeCanvas);
+    requestAnimationFrame(frame);
+    window.__pluginBooted = true;
+    if (!JUCE_NATIVE) {
+      console.log("VRS Vocal Comp - no native backend, UI running standalone");
+    }
+  }
+
+  /* readyState guard: DOMContentLoaded may already have fired (webview-008) */
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+
+/* ============================================================
+   BROWSER TEST HARNESS - test-local.html ONLY
+   This block is the ONLY difference from index.html. It fakes a
+   vocal envelope so the meter and knobs can be evaluated in a
+   browser. The plugin never loads this file.
+   ============================================================ */
+(function () {
+  if (typeof window.__JUCE__ !== "undefined" && window.__JUCE__.backend &&
+      window.__JUCE__.initialisationData &&
+      window.__JUCE__.initialisationData.__juce__sliders.length > 0) {
+    return;   /* real backend attached - do not simulate */
+  }
+  var t = 0, last = 0;
+  function tick(now) {
+    var dt = last ? Math.min(0.1, (now - last) / 1000) : 0.016;
+    last = now;
+    t += dt;
+
+    var amountEl = document.getElementById("amount-knob");
+    var charEl = document.getElementById("character-knob");
+    var amountN = amountEl ? parseFloat(amountEl.style.getPropertyValue("--v") || 0.35) : 0.35;
+    var charN = charEl ? parseFloat(charEl.style.getPropertyValue("--v") || 0.5) : 0.5;
+
+    /* pseudo vocal envelope: slow phrase + syllable rate + transient spikes */
+    var phrase   = 0.5 + 0.5 * Math.sin(t * 0.7);
+    var syllable = 0.5 + 0.5 * Math.sin(t * 5.3 + 1.1);
+    var env      = 0.35 + 0.65 * (0.6 * phrase + 0.4 * syllable);
+    var spike    = Math.pow(Math.max(0, Math.sin(t * 3.1 + 0.4)), 12);
+
+    var bypassed = document.getElementById("plugin-ui").classList.contains("bypassed");
+    var opto = bypassed ? 0 : amountN * (1 - charN * 0.6) * 13 * env;
+    var fet  = bypassed ? 0 : amountN * (0.2 + charN * 0.85) * 11 * (0.25 * env + 0.9 * spike);
+
+    if (window.__vrsSetGR) window.__vrsSetGR(opto, fet);
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  console.log("VRS Vocal Comp - browser test harness active (simulated gain reduction)");
+})();
+/* ===================== END BROWSER TEST HARNESS ===================== */
+</script>
+</body>
+</html>

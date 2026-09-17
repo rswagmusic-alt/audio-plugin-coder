@@ -1,0 +1,409 @@
+/* ============================================================
+   VRS Vocal Comp - shared UI core
+   Works with or without a JUCE backend: when JUCE_NATIVE is true each
+   knob binds to a WebSliderRelay and C++ owns the value mapping; in a
+   plain browser it falls back to local values for visual testing.
+   ============================================================ */
+(function () {
+  "use strict";
+
+  var Juce = window.Juce;
+  var NS   = "http://www.w3.org/2000/svg";
+
+  /* knob geometry, in viewBox units (0..100) */
+  var R_ARC = 39, R_BEZEL = 33, R_FACE = 28,
+      R_TICK_IN = 43, R_TICK_OUT = 47,
+      R_PTR_IN = 9, R_PTR_OUT = 24, R_HUB = 4,
+      CIRC = 2 * Math.PI * R_ARC, SWEEP = CIRC * 0.75,
+      ANG_MIN = -135, ANG_SPAN = 270, TICKS = 20;
+
+  var knobs = {}, manualMode = false, bypassed = false;
+
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+  function el(tag, attrs){ var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+  /* ---- local tapers: only used when there is no backend ---- */
+  function localToNorm(k, v){
+    return k.taper === "log" ? Math.log(v / k.min) / Math.log(k.max / k.min)
+                             : (v - k.min) / (k.max - k.min); }
+  function localFromNorm(k, n){ n = clamp01(n);
+    return k.taper === "log" ? k.min * Math.pow(k.max / k.min, n)
+                             : k.min + n * (k.max - k.min); }
+
+  /* The backend answers requestInitialUpdate asynchronously, so for the first
+     frames properties.start == properties.end and getNormalisedValue() returns
+     NaN (0/0). Falling back to the declared default keeps the arc and pointer
+     sane instead of rendering rotate(NaN) until the update lands. */
+  function backendReady(k){
+    /* gotValue guards the other half of the race: properties can arrive before
+       the first value event, and SliderState.scaledValue starts at 0 - which is
+       a legal value for several of these parameters, so it cannot be detected
+       by inspection. Until a real value event lands we show the declared
+       default instead of a spurious 0. */
+    return k.state && k.gotValue && k.state.properties
+        && k.state.properties.end !== k.state.properties.start;
+  }
+  function getNorm(k){
+    if (backendReady(k)) {
+      var n = k.state.getNormalisedValue();
+      if (isFinite(n)) return clamp01(n);
+    }
+    return clamp01(localToNorm(k, k.value));
+  }
+  function getScaled(k){
+    if (backendReady(k)) {
+      var v = k.state.getScaledValue();
+      if (isFinite(v)) return v;
+    }
+    return k.value;
+  }
+  function valueToNorm(k, v){
+    if (k.state && k.state.properties && k.state.properties.end !== k.state.properties.start) {
+      var p = k.state.properties;
+      return clamp01(Math.pow((v - p.start) / (p.end - p.start), p.skew || 1));
+    }
+    return clamp01(localToNorm(k, v));
+  }
+  function applyNorm(k, n){
+    n = clamp01(n);
+    if (k.state) k.state.setNormalisedValue(n);   /* backend echoes back */
+    else { k.value = localFromNorm(k, n); }
+    render(k);
+  }
+
+  /* ---- formatting: always shows the real parameter value ---- */
+  function fmt(k, v){
+    switch (k.unit) {
+      case "%":  return Math.round(v) + "%";
+      case "Hz": return Math.round(v) + " Hz";
+      case ":1": return v.toFixed(1) + ":1";
+      case "ms": return (v < 10 ? v.toFixed(1) : Math.round(v)) + " ms";
+      case "dB": return (k.bipolar && v >= 0 ? "+" : "") + v.toFixed(1) + " dB";
+      default:   return v.toFixed(1);
+    }
+  }
+  function zoneOf(v){ return v < 33 ? "SMOOTH" : v > 66 ? "AGGRESSIVE" : "BALANCED"; }
+
+  /* ════════════════════════════════════════════════════════════
+     Knob construction.
+
+     The pointer is an SVG <line> rotated about (50,50) - the true
+     centre of the viewBox - so its pivot IS the knob axis by
+     construction, at every size. The previous build used an
+     absolutely positioned <div> whose transform-origin sat ~49px
+     above centre, which is why indicators appeared to float.
+     ════════════════════════════════════════════════════════════ */
+  function buildSvg(k){
+    var svg = el("svg", { viewBox: "0 0 100 100" });
+
+    /* scale ring - engraved marks around the collar */
+    for (var i = 0; i <= TICKS; i++) {
+      var a  = (ANG_MIN + i * (ANG_SPAN / TICKS)) * Math.PI / 180,
+          rO = (i % 5 === 0) ? R_TICK_OUT : R_TICK_OUT - 2;
+      svg.appendChild(el("line", { class: "k-tick",
+        x1: 50 + R_TICK_IN * Math.sin(a), y1: 50 - R_TICK_IN * Math.cos(a),
+        x2: 50 + rO       * Math.sin(a), y2: 50 - rO       * Math.cos(a) }));
+    }
+
+    /* value arc */
+    svg.appendChild(el("circle", { class: "k-track", cx: 50, cy: 50, r: R_ARC,
+      "stroke-width": k.stroke, transform: "rotate(135 50 50)",
+      "stroke-dasharray": SWEEP + " " + CIRC }));
+    svg.appendChild(el("circle", { class: "k-arc", cx: 50, cy: 50, r: R_ARC,
+      "stroke-width": k.stroke, transform: "rotate(135 50 50)" }));
+
+    /* machined aluminium rim */
+    svg.appendChild(el("circle", { class: "k-rim", cx: 50, cy: 50, r: R_BEZEL,
+      fill: "none", stroke: "url(#kRimG)", "stroke-width": 5 }));
+
+    /* knurling around the rim */
+    for (var n = 0; n < 44; n++) {
+      var ka = (n * 360 / 44) * Math.PI / 180;
+      svg.appendChild(el("line", { class: "k-knurl",
+        x1: 50 + (R_BEZEL - 2.1) * Math.sin(ka), y1: 50 - (R_BEZEL - 2.1) * Math.cos(ka),
+        x2: 50 + (R_BEZEL + 2.1) * Math.sin(ka), y2: 50 - (R_BEZEL + 2.1) * Math.cos(ka) }));
+    }
+
+    /* moulded cap + specular highlight */
+    svg.appendChild(el("circle", { cx: 50, cy: 50, r: R_FACE, fill: "url(#kCapG)" }));
+    svg.appendChild(el("ellipse", { cx: 50, cy: 39, rx: 19, ry: 11, fill: "url(#kGloss)" }));
+    svg.appendChild(el("circle", { cx: 50, cy: 50, r: R_FACE, fill: "none",
+      stroke: "rgba(0,0,0,.55)", "stroke-width": 1 }));
+
+    if (k.bipolar)
+      svg.appendChild(el("line", { class: "k-notch", x1: 50, y1: 2, x2: 50, y2: 8 }));
+
+    /* Pointer: two coincident lines (dark relief under, bright on top), both
+       rotated about (50,50) - the true axis of the knob in viewBox space. */
+    k.ptrSh = el("line", { class: "k-ptr-sh",
+      x1: 50, y1: 50 - R_PTR_IN + 0.6, x2: 50, y2: 50 - R_PTR_OUT + 0.6 });
+    k.ptr   = el("line", { class: "k-ptr",
+      x1: 50, y1: 50 - R_PTR_IN,       x2: 50, y2: 50 - R_PTR_OUT });
+    svg.appendChild(k.ptrSh);
+    svg.appendChild(k.ptr);
+
+    /* centre hub hides the pointer root so it reads as one moulded part */
+    svg.appendChild(el("circle", { cx: 50, cy: 50, r: R_HUB, fill: "url(#kHubG)",
+      stroke: "rgba(0,0,0,.7)", "stroke-width": 0.7 }));
+
+    k.el.appendChild(svg);
+    k.arc   = svg.querySelector(".k-arc");
+    k.ticks = svg.querySelectorAll(".k-tick");
+  }
+
+  function render(k){
+    var n = getNorm(k), scaled = getScaled(k), len, start;
+
+    if (k.bipolar) {
+      var half = SWEEP / 2;
+      if (n >= 0.5) { start = half; len = (n - 0.5) * SWEEP; }
+      else          { len = (0.5 - n) * SWEEP; start = half - len; }
+    } else { start = 0; len = n * SWEEP; }
+
+    k.arc.setAttribute("stroke-dasharray", len + " " + CIRC);
+    k.arc.setAttribute("stroke-dashoffset", -start);
+
+    /* single source of truth for the pointer angle - both layers share it */
+    var rot = "rotate(" + (ANG_MIN + n * ANG_SPAN) + " 50 50)";
+    k.ptr.setAttribute("transform", rot);
+    k.ptrSh.setAttribute("transform", rot);
+
+    for (var i = 0; i < k.ticks.length; i++)
+      k.ticks[i].classList.toggle("lit", (i / TICKS) <= n + 0.001);
+
+    k.el.style.setProperty("--v", n.toFixed(3));
+    if (k.valueEl) k.valueEl.textContent = fmt(k, scaled);
+    if (k.param === "character") {
+      var z = document.getElementById("character-zone");
+      if (z) z.textContent = zoneOf(scaled);
+    }
+    k.el.setAttribute("aria-valuenow", scaled.toFixed(2));
+  }
+
+  function build(node){
+    var k = { el: node, param: node.dataset.param,
+      min: +node.dataset.min, max: +node.dataset.max, def: +node.dataset.default,
+      unit: node.dataset.unit, taper: node.dataset.taper || "lin",
+      bipolar: node.dataset.bipolar === "1", stroke: +node.dataset.stroke,
+      valueEl: document.getElementById(node.dataset.param + "-value"),
+      value: +node.dataset.default, state: null, gotValue: false };
+
+    buildSvg(k);
+    node.setAttribute("aria-label", k.param);
+    node.setAttribute("aria-valuemin", k.min);
+    node.setAttribute("aria-valuemax", k.max);
+
+    if (JUCE_NATIVE) {
+      k.state = Juce.getSliderState(k.param);
+      k.state.valueChangedEvent.addListener(function(){ k.gotValue = true; render(k); });
+      k.state.propertiesChangedEvent.addListener(function(){ render(k); });
+    }
+
+    var dragging = false, lastY = 0;
+    node.addEventListener("pointerdown", function(e){
+      dragging = true; lastY = e.clientY; node.setPointerCapture(e.pointerId);
+      if (k.state) k.state.sliderDragStarted(); e.preventDefault(); });
+    node.addEventListener("pointermove", function(e){
+      if (!dragging) return;
+      var dy = lastY - e.clientY; lastY = e.clientY;
+      applyNorm(k, getNorm(k) + dy / (e.shiftKey ? 1000 : 200)); });
+    function end(e){
+      if (!dragging) return; dragging = false;
+      if (k.state) k.state.sliderDragEnded();
+      if (e.pointerId !== undefined && node.hasPointerCapture(e.pointerId))
+        node.releasePointerCapture(e.pointerId); }
+    node.addEventListener("pointerup", end);
+    node.addEventListener("pointercancel", end);
+    node.addEventListener("dblclick", function(){
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, valueToNorm(k, k.def));
+      if (k.state) k.state.sliderDragEnded(); });
+    node.addEventListener("wheel", function(e){
+      e.preventDefault();
+      var step = (e.shiftKey ? 0.005 : 0.01) * (e.deltaY < 0 ? 1 : -1);
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, getNorm(k) + step);
+      if (k.state) k.state.sliderDragEnded(); }, { passive: false });
+    node.addEventListener("keydown", function(e){
+      var dir = (e.key === "ArrowUp" || e.key === "ArrowRight") ? 1
+              : (e.key === "ArrowDown" || e.key === "ArrowLeft") ? -1 : 0;
+      if (!dir) return;
+      e.preventDefault();
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, getNorm(k) + dir * (e.shiftKey ? 0.005 : 0.02));
+      if (k.state) k.state.sliderDragEnded(); });
+
+    render(k);
+    knobs[k.param] = k;
+    return k;
+  }
+
+  /* ---------- MACRO / MANUAL ---------- */
+  var manualSect = document.getElementById("manual-sect"),
+      modeSwitch = document.getElementById("mode-switch"),
+      modeState  = null;
+
+  function renderMode(){
+    Array.prototype.forEach.call(modeSwitch.querySelectorAll("button"), function(b){
+      b.classList.toggle("on", (b.dataset.mode === "manual") === manualMode); });
+    manualSect.classList.toggle("off", !manualMode);
+    ["amount", "character"].forEach(function(p){
+      if (knobs[p] && p === "amount") knobs[p].el.style.opacity = manualMode ? 0.4 : 1; });
+  }
+  modeSwitch.addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    manualMode = (b.dataset.mode === "manual");
+    if (modeState) modeState.setValue(manualMode);
+    renderMode();
+  });
+
+  /* ---------- bypass ---------- */
+  var ui = document.getElementById("plugin-ui"),
+      bb = document.getElementById("bypass-btn"),
+      bypassState = null;
+  function renderBypass(){
+    bb.classList.toggle("on", bypassed);
+    ui.classList.toggle("bypassed", bypassed);
+    bb.setAttribute("aria-pressed", bypassed ? "true" : "false"); }
+  bb.addEventListener("click", function(){
+    bypassed = !bypassed;
+    if (bypassState) bypassState.setValue(bypassed);
+    renderBypass(); });
+
+  /* ---------- presets (MACRO values, unchanged) ---------- */
+  var PRESETS = {
+    init:      { amount:35, character:50, mix:100, output:0, sc_hpf:85 },
+    intimate:  { amount:25, character:15, mix:100, output:0, sc_hpf:70 },
+    pop:       { amount:45, character:55, mix:100, output:0, sc_hpf:85 },
+    rap:       { amount:60, character:85, mix:100, output:0, sc_hpf:100 },
+    crush:     { amount:85, character:90, mix:45,  output:0, sc_hpf:110 },
+    broadcast: { amount:40, character:30, mix:100, output:0, sc_hpf:90 }
+  };
+  document.getElementById("preset-select").addEventListener("change", function(e){
+    var p = PRESETS[e.target.value]; if (!p) return;
+    for (var key in p) {
+      var k = knobs[key]; if (!k) continue;
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, valueToNorm(k, p[key]));
+      if (k.state) k.state.sliderDragEnded();
+    }
+  });
+
+  /* ---------- canvases ---------- */
+  function ctxOf(id){
+    var c = document.getElementById(id), x = c.getContext("2d"),
+        d = window.devicePixelRatio || 1;
+    c.width = Math.round(c.clientWidth * d); c.height = Math.round(c.clientHeight * d);
+    x.setTransform(d, 0, 0, d, 0, 0); return { c: c, x: x }; }
+  var wave, grc, inM, outM;
+  function sizeAll(){ wave = ctxOf("wave"); grc = ctxOf("gr-canvas");
+    inM = ctxOf("in-meter"); outM = ctxOf("out-meter"); }
+
+  function rr(x,a,b,w,h,r){ x.beginPath(); x.moveTo(a+r,b);
+    x.arcTo(a+w,b,a+w,b+h,r); x.arcTo(a+w,b+h,a,b+h,r);
+    x.arcTo(a,b+h,a,b,r); x.arcTo(a,b,a+w,b,r); x.closePath(); }
+
+  var tSec = 0, envHist = [];
+  function drawWave(){
+    var W = wave.c.clientWidth, H = wave.c.clientHeight, x = wave.x;
+    x.clearRect(0,0,W,H);
+    var bars = Math.floor(W/4);
+    if (envHist.length !== bars) envHist = new Array(bars).fill(0);
+    for (var i = bars-1; i > 0; i--) envHist[i] = envHist[i-1];
+    envHist[0] = bypassed ? 0.05 : Math.min(1, lvlIn);
+    for (var j = 0; j < bars; j++) {
+      var h = Math.max(1.5, envHist[j] * (H*0.44));
+      var g = x.createLinearGradient(0, H/2-h, 0, H/2+h);
+      g.addColorStop(0,"rgba(227,169,82,0.10)");
+      g.addColorStop(0.5,"rgba(227,169,82,0.85)");
+      g.addColorStop(1,"rgba(227,169,82,0.10)");
+      x.fillStyle = g; x.fillRect(W-4-j*4, H/2-h, 2, h*2);
+    }
+    x.strokeStyle = "rgba(227,169,82,0.16)"; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(0,H/2+0.5); x.lineTo(W,H/2+0.5); x.stroke();
+  }
+
+  var MAXGR = 20, grO = 0, grF = 0, tgO = 0, tgF = 0,
+      lvlIn = 0, lvlOut = 0, tgIn = 0, tgOut = 0,
+      readout = document.getElementById("gr-readout");
+
+  function drawGr(){
+    var W = grc.c.clientWidth, H = grc.c.clientHeight, x = grc.x;
+    x.clearRect(0,0,W,H);
+    x.fillStyle = "#05070A"; rr(x,0,0,W,H,2); x.fill();
+    var total = Math.min(MAXGR, grO + grF),
+        segs = 44, gap = 2, sw = (W-16-(segs-1)*gap)/segs,
+        lit = Math.round(total/MAXGR*segs);
+    for (var i = 0; i < segs; i++) {
+      var f = i/segs;
+      x.fillStyle = i < lit ? (f > 0.60 ? "#E5484D" : f > 0.35 ? "#E3A952" : "#3FD68A")
+                            : "#12171C";
+      rr(x, 8+i*(sw+gap), 9, sw, H-24, 1.5); x.fill();
+    }
+    x.fillStyle = "#97A3AF"; x.font = "6.5px -apple-system,system-ui,sans-serif";
+    x.textBaseline = "top";
+    [3,6,12,20].forEach(function(d){ x.fillText("-"+d, 8+(d/MAXGR)*(W-16)-5, H-12); });
+    readout.textContent = "-" + total.toFixed(1) + " dB";
+    readout.style.color = total > 12 ? "#E5484D" : "#E3A952";
+  }
+  function drawIo(m, v, warm){
+    var W = m.c.clientWidth, H = m.c.clientHeight, x = m.x;
+    x.clearRect(0,0,W,H); x.fillStyle = "#0A0E12"; rr(x,0,0,W,H,1); x.fill();
+    var n = 22, gp = 1, sw = (W-(n-1)*gp)/n, lit = Math.round(clamp01(v)*n);
+    for (var i = 0; i < n; i++) {
+      x.fillStyle = i < lit ? (i/n > 0.86 ? "#E5484D" : i/n > 0.70 ? "#E3A952" : "#3FD68A")
+                            : "#161B21";
+      x.fillRect(i*(sw+gp), 0, sw, H);
+    }
+  }
+
+  /* pushed from C++ (or the browser harness) */
+  function setGR(o,f){ tgO = Math.max(0,Math.min(MAXGR,o||0)); tgF = Math.max(0,Math.min(MAXGR,f||0)); }
+  function setLevels(i,o){ tgIn = clamp01(i||0); tgOut = clamp01(o||0); }
+  window.__vrsSetGR = setGR;
+  window.__vrsSetLevels = setLevels;
+
+  var lastT = 0;
+  function frame(ts){
+    var dt = lastT ? Math.min(0.1, (ts-lastT)/1000) : 0.016; lastT = ts; tSec += dt;
+    var rel = Math.exp(-dt/0.18);
+    grO = tgO > grO ? tgO : tgO + (grO-tgO)*rel;
+    grF = tgF > grF ? tgF : tgF + (grF-tgF)*rel;
+    var relL = Math.exp(-dt/0.25);
+    lvlIn  = tgIn  > lvlIn  ? tgIn  : tgIn  + (lvlIn-tgIn)*relL;
+    lvlOut = tgOut > lvlOut ? tgOut : tgOut + (lvlOut-tgOut)*relL;
+    drawWave(); drawGr(); drawIo(inM, lvlIn, false); drawIo(outM, lvlOut, true);
+    requestAnimationFrame(frame);
+  }
+
+  function init(){
+    Array.prototype.forEach.call(document.querySelectorAll(".knob"), build);
+
+    if (JUCE_NATIVE) {
+      bypassState = Juce.getToggleState("bypass");
+      bypassState.valueChangedEvent.addListener(function(){
+        bypassed = bypassState.getValue(); renderBypass(); });
+      bypassed = bypassState.getValue();
+
+      modeState = Juce.getToggleState("manual_mode");
+      modeState.valueChangedEvent.addListener(function(){
+        manualMode = modeState.getValue(); renderMode(); });
+      manualMode = modeState.getValue();
+
+      window.__JUCE__.backend.addEventListener("grUpdate", function(ev){
+        if (!ev) return;
+        setGR(ev.opto, ev.fet);
+        if (ev.lin !== undefined) setLevels(ev.lin, ev.lout);
+      });
+    }
+
+    renderBypass(); renderMode();
+    sizeAll(); window.addEventListener("resize", sizeAll);
+    requestAnimationFrame(frame);
+    window.__pluginBooted = true;
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();

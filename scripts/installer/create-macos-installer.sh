@@ -39,10 +39,29 @@ echo ""
 
 # --- CHECK PREREQUISITES ---
 
-# Check for build artifacts
-VST3_BUNDLE="$(find "$BUILD_DIR" -name "${PLUGIN_NAME}.vst3" -type d 2>/dev/null | head -1 || true)"
-AU_BUNDLE="$(find "$BUILD_DIR" -name "${PLUGIN_NAME}.component" -type d 2>/dev/null | head -1 || true)"
-STANDALONE_APP="$(find "$BUILD_DIR" -name "${PLUGIN_NAME}.app" -type d 2>/dev/null | head -1 || true)"
+# Check for build artifacts. Prefer the exact CMake-target-name match (used
+# when PRODUCT_NAME == target name), but fall back to any bundle inside this
+# plugin's own build/plugins/<PLUGIN_NAME> tree - PRODUCT_NAME in CMakeLists.txt
+# can differ from the target name (e.g. "VRS Vocal Comp" vs "VictorRSwagVocalComp"),
+# and that subtree only ever contains this plugin's own artifacts.
+SCOPED_BUILD_DIR="$BUILD_DIR/plugins/$PLUGIN_NAME"
+find_bundle() {
+    local ext="$1" found
+    found="$(find "$BUILD_DIR" -name "${PLUGIN_NAME}.${ext}" -type d 2>/dev/null | head -1 || true)"
+    if [[ -z "$found" && -d "$SCOPED_BUILD_DIR" ]]; then
+        # JUCE's own artefact layout: <Target>_artefacts/Release/<Format>/*.<ext>
+        # Scoping to it (rather than the whole plugin build tree) avoids picking
+        # up unrelated intermediate/helper binaries that share the extension.
+        found="$(find "$SCOPED_BUILD_DIR" -path "*_artefacts/Release/*" -name "*.${ext}" -type d 2>/dev/null | head -1 || true)"
+        if [[ -z "$found" ]]; then
+            found="$(find "$SCOPED_BUILD_DIR" -name "*.${ext}" -type d 2>/dev/null | head -1 || true)"
+        fi
+    fi
+    printf '%s\n' "$found"
+}
+VST3_BUNDLE="$(find_bundle vst3)"
+AU_BUNDLE="$(find_bundle component)"
+STANDALONE_APP="$(find_bundle app)"
 
 if [[ -z "$VST3_BUNDLE" ]]; then
     echo "ERROR: VST3 build not found. Please build the plugin first." >&2

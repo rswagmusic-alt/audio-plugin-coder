@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<!-- index.html - production WebView UI (820x540). Visual refresh: fixes THRESHOLD/MANUAL
+     overlap, AMOUNT alignment, vintage-hardware chassis. DSP/parameters unchanged -
+     control IDs map 1:1 to APVTS parameter IDs. webview-008 compliant. -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VRS Vocal Comp</title>
+<style>
+  :root{
+    /* ── palette ──────────────────────────────────────────────
+       cyan  = primary control      blue  = secondary control
+       green = active / OK          gold  = vintage indicators
+       red   = bypass / warning     metal = text and labels      */
+    --cyan:#00F5FF; --cyan-dk:#0A7F88;
+    --blue:#4A9EFF; --blue-dk:#1F4E8C;
+    --green:#3FD68A; --gold:#E3A952; --gold-dk:#8A6224;
+    --red:#E5484D;
+    --txt:#DDE5EC; --txt-dim:#97A3AF; --etch:#0A0D11;
+
+    --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  }
+  *{box-sizing:border-box;-webkit-user-select:none;user-select:none}
+  html,body{margin:0;width:820px;height:540px;overflow:hidden;background:#07090B;color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+
+  /* ══ CHASSIS: brushed aluminium face, warm aged cast, real vignette ══ */
+  #plugin-ui{position:relative;width:820px;height:540px;padding:16px 18px 8px;
+    display:flex;flex-direction:column;transition:opacity 140ms ease-out;
+    background:
+      linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,0) 16%),
+      linear-gradient(180deg,rgba(186,150,86,.07),rgba(0,0,0,0) 62%),
+      radial-gradient(150% 110% at 50% 38%,rgba(0,0,0,0) 42%,rgba(0,0,0,.70) 100%),
+      linear-gradient(180deg,#3A4148 0%,#2B3138 26%,#1D2228 62%,#141920 100%);}
+  #plugin-ui::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+    background:
+      repeating-linear-gradient(90deg,rgba(255,255,255,.022) 0 1px,rgba(0,0,0,.020) 1px 2px,transparent 2px 5px),
+      var(--grain);
+    background-size:auto,200px 200px;mix-blend-mode:overlay;opacity:.62}
+  /* chassis edge: bright top lip, dark bottom shadow */
+  #plugin-ui::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.14),inset 0 -2px 0 rgba(0,0,0,.8),
+               inset 2px 0 0 rgba(255,255,255,.05),inset -2px 0 0 rgba(0,0,0,.55),
+               inset 0 0 0 1px rgba(0,0,0,.9)}
+  #plugin-ui.bypassed{opacity:.45}
+  #plugin-ui>*{position:relative;z-index:1}
+
+  /* rack screws */
+  .screw{position:absolute;width:13px;height:13px;border-radius:50%;z-index:4;pointer-events:none;
+    background:radial-gradient(circle at 34% 28%,#8C96A1,#4A525B 48%,#22282E 78%,#12161A);
+    box-shadow:0 2px 3px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.35),
+               inset 0 -1px 0 rgba(0,0,0,.6)}
+  .screw::after{content:"";position:absolute;left:2.5px;right:2.5px;top:6px;height:1.5px;
+    background:linear-gradient(90deg,rgba(0,0,0,.75),rgba(0,0,0,.5));
+    box-shadow:0 1px 0 rgba(255,255,255,.14);transform:rotate(22deg)}
+  .screw.tl{top:8px;left:8px}  .screw.tr{top:8px;right:8px}
+  .screw.bl{bottom:8px;left:8px} .screw.br{bottom:8px;right:8px}
+
+  /* ══ HEADER: engraved brand plate ══ */
+  .header{height:46px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 6px;flex:0 0 auto;
+    border-bottom:1px solid rgba(0,0,0,.72);box-shadow:0 1px 0 rgba(255,255,255,.08)}
+  .brand .n1{font-size:15px;font-weight:700;letter-spacing:.30em;color:#F0F5F9;
+    text-shadow:0 -1px 0 rgba(0,0,0,.9),0 1px 0 rgba(255,255,255,.14)}
+  .brand .n1 b{color:var(--cyan);font-weight:700;
+    text-shadow:0 0 10px rgba(0,245,255,.55),0 -1px 0 rgba(0,0,0,.8)}
+  .brand .n2{margin-top:4px;font-size:8px;font-weight:600;letter-spacing:.46em;
+    color:var(--gold);text-shadow:0 -1px 0 rgba(0,0,0,.8)}
+  .hgroup{display:flex;align-items:center;gap:12px}
+
+  /* two-position rocker */
+  .mode{display:flex;height:28px;border-radius:4px;overflow:hidden;
+    border:1px solid #05070A;
+    box-shadow:inset 0 3px 5px rgba(0,0,0,.85),0 1px 0 rgba(255,255,255,.10)}
+  .mode button{all:unset;padding:0 14px;height:26px;line-height:26px;font-size:9px;font-weight:700;
+    letter-spacing:.17em;color:var(--txt-dim);cursor:pointer;transition:all 120ms ease-out;
+    background:linear-gradient(180deg,#39404780,#1B1F2480);
+    text-shadow:0 -1px 0 rgba(0,0,0,.8)}
+  .mode button.on{color:#06230F;text-shadow:none;
+    background:linear-gradient(180deg,#5CE8A4,#22A765);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 0 10px rgba(63,214,138,.4)}
+  .mode button:not(.on):hover{color:var(--txt)}
+
+  /* recessed selector */
+  select{width:158px;height:28px;border:1px solid #05070A;border-radius:4px;color:var(--txt);
+    font-family:inherit;font-size:11px;padding:0 24px 0 9px;-webkit-appearance:none;appearance:none;
+    outline:none;cursor:pointer;background-color:#171C22;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23E3A952' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 9px center;
+    box-shadow:inset 0 3px 5px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.10)}
+
+  /* ══ signal window ══ */
+  .wavewrap{height:30px;margin-top:6px;position:relative;flex:0 0 auto;border-radius:3px;overflow:hidden;
+    background:linear-gradient(180deg,#05070A,#0A0E12);
+    box-shadow:inset 0 3px 7px rgba(0,0,0,.9),inset 0 -1px 0 rgba(255,255,255,.05),
+               0 1px 0 rgba(255,255,255,.09)}
+  #wave{display:block;width:100%;height:100%}
+  .wavewrap .tag{position:absolute;left:8px;top:3px;font-size:6.5px;letter-spacing:.28em;
+    color:var(--gold);opacity:.65}
+
+  /* ══ SECTIONS: sunken sub-plates with their own engraved caption band ══
+     The caption sits in a reserved band, so control labels can never
+     collide with it - that was the THRESHOLD / MANUAL DYNAMICS clash. */
+  .sect{border-radius:5px;position:relative;
+    background:linear-gradient(180deg,rgba(6,8,11,.62),rgba(18,22,27,.34));
+    box-shadow:inset 0 3px 6px rgba(0,0,0,.72),inset 0 -1px 0 rgba(255,255,255,.055),
+               0 1px 0 rgba(255,255,255,.085)}
+  .sect>.cap{position:absolute;top:5px;left:0;right:0;text-align:center;
+    font-size:7px;font-weight:700;letter-spacing:.34em;color:var(--gold);opacity:.9;
+    text-shadow:0 -1px 0 rgba(0,0,0,.9);pointer-events:none}
+  .sect.off{opacity:.32;filter:saturate(.18)}
+  .sect.off .knob{cursor:not-allowed}
+
+  .manual{height:106px;margin-top:8px;padding:18px 18px 0;display:flex;
+    align-items:flex-start;justify-content:space-around;flex:0 0 auto}
+  .hero{height:180px;margin-top:8px;display:flex;align-items:center;justify-content:center;
+    gap:40px;flex:0 0 auto}
+  .meterrow{height:50px;margin-top:6px;padding:16px 12px 0;display:flex;align-items:center;
+    gap:10px;flex:0 0 auto}
+  .foot{height:58px;margin-top:6px;display:flex;align-items:center;gap:22px;padding:0 8px;flex:0 0 auto}
+  .spacer{flex:1 1 auto}
+
+  /* ══ control block: fixed rows so every label lines up ══ */
+  .control{display:flex;flex-direction:column;align-items:center}
+  .kslot{display:flex;align-items:center;justify-content:center}   /* knob centres align */
+  .hero .kslot{height:128px}
+  .manual .kslot{height:52px}
+  .label{height:12px;line-height:12px;font-size:9px;font-weight:700;letter-spacing:.20em;
+    color:var(--txt-dim);text-shadow:0 -1px 0 rgba(0,0,0,.85);white-space:nowrap}
+  .hero .label{margin-bottom:6px} .manual .label{margin-bottom:4px}
+
+  /* recessed LED readout window */
+  .value{height:17px;line-height:17px;min-width:60px;padding:0 7px;border-radius:2px;
+    font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;text-align:center;
+    color:var(--cyan);background:#06080B;
+    box-shadow:inset 0 2px 3px rgba(0,0,0,.9),0 1px 0 rgba(255,255,255,.07);
+    text-shadow:0 0 6px currentColor;white-space:nowrap}
+  .hero .value{margin-top:6px} .manual .value{margin-top:4px;height:15px;line-height:15px;
+    font-size:10px;min-width:54px}
+  .value.gold{color:var(--gold)} .value.blue{color:var(--blue)}
+  .zone{height:11px;line-height:11px;margin-top:2px;font-size:7.5px;font-weight:700;
+    letter-spacing:.18em;color:var(--green);text-shadow:0 0 6px rgba(63,214,138,.45)}
+
+  /* ══ knobs ══ */
+  .knob{position:relative;cursor:ns-resize;outline:none;touch-action:none;
+    filter:drop-shadow(0 3px 5px rgba(0,0,0,.72))}
+  .knob svg{display:block;width:100%;height:100%;overflow:visible}
+  .knob.hero{width:128px;height:128px}
+  .knob.second{width:88px;height:88px}
+  .knob.mini{width:52px;height:52px}
+  .knob.fmini{width:46px;height:46px}
+
+  .knob .k-track{fill:none;stroke:#05070A;stroke-linecap:round}
+  .knob .k-arc{fill:none;stroke-linecap:round;stroke:var(--kc,var(--cyan))}
+  .knob .k-tick{stroke:#5A646F;stroke-width:1.1}
+  .knob .k-tick.lit{stroke:var(--kc,var(--cyan));opacity:.95}
+  .knob .k-knurl{stroke:rgba(0,0,0,.55);stroke-width:.9}
+  .knob .k-notch{stroke:var(--txt-dim);stroke-width:1.2;opacity:.6}
+  .knob .k-ptr-sh{stroke:rgba(0,0,0,.85);stroke-width:3.4;stroke-linecap:round}
+  .knob .k-ptr{stroke:#F2F7FB;stroke-width:2.3;stroke-linecap:round}
+  .knob:focus-visible .k-rim{stroke:var(--kc,var(--cyan));stroke-width:1.6;stroke-opacity:.75}
+  .knob.hero{--kc:var(--cyan)}
+  .knob[data-accent="blue"]{--kc:var(--blue)}
+  .knob[data-accent="gold"]{--kc:var(--gold)}
+  .knob.hero .k-arc{filter:drop-shadow(0 0 7px rgba(0,245,255,calc(.30 + var(--v,0)*.55)))}
+  .knob[data-accent="gold"] .k-arc{filter:drop-shadow(0 0 5px rgba(227,169,82,.55))}
+  .knob[data-accent="blue"] .k-arc{filter:drop-shadow(0 0 5px rgba(74,158,255,.5))}
+
+  /* ══ meters ══ */
+  #gr-canvas{flex:1 1 auto;height:30px;display:block;border-radius:2px}
+  .mtag{font-size:7.5px;font-weight:700;letter-spacing:.2em;color:var(--gold);width:20px}
+  #gr-readout{width:64px;text-align:center;height:19px;line-height:19px;border-radius:2px;
+    font-size:11px;font-weight:700;color:var(--gold);background:#06080B;
+    font-variant-numeric:tabular-nums;text-shadow:0 0 6px currentColor;
+    box-shadow:inset 0 2px 3px rgba(0,0,0,.9),0 1px 0 rgba(255,255,255,.07)}
+  .io{display:flex;flex-direction:column;gap:3px;width:96px}
+  .io .r{display:flex;align-items:center;gap:6px}
+  .io .r span{font-size:6.5px;letter-spacing:.18em;color:var(--txt-dim);width:16px}
+  .io canvas{flex:1 1 auto;height:6px;display:block;border-radius:1px}
+
+  /* ══ footer: horizontal utility controls ══ */
+  .hcontrol{display:flex;align-items:center;gap:9px}
+  .hcontrol .htext{display:flex;flex-direction:column;gap:3px}
+  .hcontrol .label{height:10px;line-height:10px;font-size:8px;margin:0}
+  .hcontrol .value{height:15px;line-height:15px;font-size:10px;min-width:56px;margin:0}
+
+  /* physical push button */
+  #bypass-btn{position:relative;width:104px;height:34px;border-radius:4px;cursor:pointer;outline:none;
+    border:1px solid #05070A;font-family:inherit;font-size:9px;font-weight:700;letter-spacing:.2em;
+    color:var(--txt-dim);transition:all 110ms ease-out;padding-left:12px;
+    background:linear-gradient(180deg,#464E57,#272D34 52%,#1A1F25);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28),inset 0 -2px 3px rgba(0,0,0,.55),
+               0 3px 5px rgba(0,0,0,.72);text-shadow:0 -1px 0 rgba(0,0,0,.8)}
+  #bypass-btn::before{content:"";position:absolute;left:9px;top:50%;width:7px;height:7px;
+    margin-top:-3.5px;border-radius:50%;background:#2A1416;
+    box-shadow:inset 0 1px 1px rgba(0,0,0,.9)}
+  #bypass-btn.on{color:#FFE9EA;
+    background:linear-gradient(180deg,#2A3037,#1B2026 52%,#161A1F);
+    box-shadow:inset 0 2px 4px rgba(0,0,0,.8),0 1px 2px rgba(0,0,0,.6)}
+  #bypass-btn.on::before{background:var(--red);box-shadow:0 0 9px rgba(229,72,77,.9),
+    inset 0 1px 0 rgba(255,255,255,.4)}
+  #bypass-btn:hover{color:var(--txt)}
+  .sig{font-size:7.5px;letter-spacing:.3em;color:var(--gold);opacity:.6}
+</style>
+</head>
+<body>
+<div id="plugin-ui">
+  <i class="screw tl"></i><i class="screw tr"></i><i class="screw bl"></i><i class="screw br"></i>
+
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <linearGradient id="kRimG" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#9BA5B0"/><stop offset="22%" stop-color="#5A636D"/>
+      <stop offset="50%" stop-color="#262C33"/><stop offset="78%" stop-color="#4E5760"/>
+      <stop offset="100%" stop-color="#868F99"/></linearGradient>
+    <radialGradient id="kCapG" cx="38%" cy="26%" r="82%">
+      <stop offset="0%" stop-color="#4A535D"/><stop offset="42%" stop-color="#2A3138"/>
+      <stop offset="100%" stop-color="#0E1216"/></radialGradient>
+    <linearGradient id="kGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity=".20"/>
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity=".03"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+    <radialGradient id="kHubG" cx="40%" cy="30%" r="72%">
+      <stop offset="0%" stop-color="#B6C0CB"/><stop offset="60%" stop-color="#606A75"/>
+      <stop offset="100%" stop-color="#2B3139"/></radialGradient>
+  </defs></svg>
+
+  <div class="header">
+    <div class="brand">
+      <div class="n1">VRS <b>VOCAL COMP</b></div>
+      <div class="n2">VICTOR R SWAG</div>
+    </div>
+    <div class="hgroup">
+      <div class="mode" id="mode-switch">
+        <button data-mode="macro" class="on">MACRO</button>
+        <button data-mode="manual">MANUAL</button>
+      </div>
+      <select id="preset-select">
+        <option value="init">Init</option>
+        <option value="intimate">Intimate Vocal</option>
+        <option value="pop" selected>Pop Lead</option>
+        <option value="rap">Rap Upfront</option>
+        <option value="crush">Parallel Crush</option>
+        <option value="broadcast">Broadcast Even</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="wavewrap"><canvas id="wave"></canvas><div class="tag">SIGNAL</div></div>
+
+  <div class="sect manual off" id="manual-sect">
+    <div class="cap">MANUAL DYNAMICS</div>
+    <div class="control"><div class="label">THRESHOLD</div>
+      <div class="kslot"><div class="knob mini" id="threshold-knob" tabindex="0" role="slider"
+           data-accent="gold" data-param="threshold"
+           data-min="-48" data-max="0" data-default="-18" data-unit="dB" data-stroke="5"></div></div>
+      <div class="value gold" id="threshold-value">-18.0 dB</div></div>
+    <div class="control"><div class="label">RATIO</div>
+      <div class="kslot"><div class="knob mini" id="ratio-knob" tabindex="0" role="slider"
+           data-accent="gold" data-param="ratio"
+           data-min="1" data-max="20" data-default="4" data-unit=":1" data-taper="log" data-stroke="5"></div></div>
+      <div class="value gold" id="ratio-value">4.0:1</div></div>
+    <div class="control"><div class="label">ATTACK</div>
+      <div class="kslot"><div class="knob mini" id="attack-knob" tabindex="0" role="slider"
+           data-accent="gold" data-param="attack"
+           data-min="0.1" data-max="100" data-default="10" data-unit="ms" data-taper="log" data-stroke="5"></div></div>
+      <div class="value gold" id="attack-value">10.0 ms</div></div>
+    <div class="control"><div class="label">RELEASE</div>
+      <div class="kslot"><div class="knob mini" id="release-knob" tabindex="0" role="slider"
+           data-accent="gold" data-param="release"
+           data-min="20" data-max="2000" data-default="250" data-unit="ms" data-taper="log" data-stroke="5"></div></div>
+      <div class="value gold" id="release-value">250 ms</div></div>
+  </div>
+
+  <div class="hero">
+    <div class="control"><div class="label">CHARACTER</div>
+      <div class="kslot"><div class="knob second" id="character-knob" tabindex="0" role="slider"
+           data-accent="blue" data-param="character"
+           data-min="0" data-max="100" data-default="50" data-unit="%" data-stroke="6"></div></div>
+      <div class="value blue" id="character-value">50%</div>
+      <div class="zone" id="character-zone">BALANCED</div></div>
+
+    <div class="control"><div class="label">AMOUNT</div>
+      <div class="kslot"><div class="knob hero" id="amount-knob" tabindex="0" role="slider"
+           data-param="amount"
+           data-min="0" data-max="100" data-default="35" data-unit="%" data-stroke="7"></div></div>
+      <div class="value" id="amount-value">35%</div>
+      <div class="zone"></div></div>
+
+    <div class="control"><div class="label">MIX</div>
+      <div class="kslot"><div class="knob second" id="mix-knob" tabindex="0" role="slider"
+           data-accent="blue" data-param="mix"
+           data-min="0" data-max="100" data-default="100" data-unit="%" data-stroke="6"></div></div>
+      <div class="value blue" id="mix-value">100%</div>
+      <div class="zone"></div></div>
+  </div>
+
+  <div class="sect meterrow">
+    <div class="cap">GAIN REDUCTION</div>
+    <div class="mtag">GR</div>
+    <canvas id="gr-canvas"></canvas>
+    <div id="gr-readout">-0.0 dB</div>
+    <div class="io">
+      <div class="r"><span>IN</span><canvas id="in-meter"></canvas></div>
+      <div class="r"><span>OUT</span><canvas id="out-meter"></canvas></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="hcontrol">
+      <div class="knob fmini" id="sc_hpf-knob" tabindex="0" role="slider"
+           data-accent="blue" data-param="sc_hpf"
+           data-min="20" data-max="300" data-default="85" data-unit="Hz" data-taper="log" data-stroke="5"></div>
+      <div class="htext"><div class="label">SC HPF</div>
+        <div class="value blue" id="sc_hpf-value">85 Hz</div></div>
+    </div>
+    <div class="hcontrol">
+      <div class="knob fmini" id="output-knob" tabindex="0" role="slider"
+           data-accent="blue" data-param="output"
+           data-min="-12" data-max="12" data-default="0" data-unit="dB" data-bipolar="1" data-stroke="5"></div>
+      <div class="htext"><div class="label">OUTPUT</div>
+        <div class="value blue" id="output-value">+0.0 dB</div></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="sig">HYBRID OPTO &rarr; FET</div>
+    <button id="bypass-btn" type="button">BYPASS</button>
+  </div>
+</div>
+<script>
+/* ============================================================
+   Boot-time backend detection. MUST run before the interop block,
+   which installs a placeholder window.__JUCE__ when none exists.
+   ============================================================ */
+var JUCE_NATIVE = (typeof window.__JUCE__ !== "undefined");
+
+/* ============================================================
+   BEGIN inlined JUCE webview-interop  (JUCE 9.0.1)
+   export{} replaced by a window.Juce assignment - ES6 modules and
+   external <script src> fail silently in JUCE WebView (webview-008).
+   ============================================================ */
+/*!
+  ==============================================================================
+
+   This file is part of the JUCE framework.
+   Copyright (c) Raw Material Software Limited
+
+   JUCE is an open source framework subject to commercial or open source
+   licensing.
+
+   By downloading, installing, or using the JUCE framework, or combining the
+   JUCE framework with any other source code, object code, content or any other
+   copyrightable work, you agree to the terms of the JUCE End User Licence
+   Agreement, and all incorporated terms including the JUCE Privacy Policy and
+   the JUCE Website Terms of Service, as applicable, which will bind you. If you
+   do not agree to the terms of these agreements, we will not license the JUCE
+   framework to you, and you must discontinue the installation or download
+   process and cease use of the JUCE framework.
+
+   JUCE End User Licence Agreement: https://juce.com/legal/juce-9-licence/
+   JUCE Privacy Policy: https://juce.com/juce-privacy-policy
+   JUCE Website Terms of Service: https://juce.com/juce-website-terms-of-service/
+
+   Or:
+
+   You may also use this code under the terms of the AGPLv3:
+   https://www.gnu.org/licenses/agpl-3.0.en.html
+
+   THE JUCE FRAMEWORK IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL
+   WARRANTIES, WHETHER EXPRESSED OR IMPLIED, INCLUDING WARRANTY OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
+
+  ==============================================================================
+*/
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __typeError = (msg) => {
+  throw TypeError(msg);
+};
+var __objRest = (source, exclude) => {
+  var target = {};
+  for (var prop in source)
+    if (__hasOwnProp.call(source, prop) && exclude.indexOf(prop) < 0)
+      target[prop] = source[prop];
+  if (source != null && __getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(source)) {
+      if (exclude.indexOf(prop) < 0 && __propIsEnum.call(source, prop))
+        target[prop] = source[prop];
+    }
+  return target;
+};
+var __accessCheck = (obj, member, msg) => member.has(obj) || __typeError("Cannot " + msg);
+var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot add the same private member more than once") : member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+var __privateMethod = (obj, member, method) => (__accessCheck(obj, member, "access private method"), method);
+
+// src/check_native_interop.ts
+var JuceInitialisationData = class {
+  constructor() {
+    this.__juce__platform = [];
+    this.__juce__functions = [];
+    this.__juce__registeredGlobalEventIds = [];
+    this.__juce__sliders = [];
+    this.__juce__toggles = [];
+    this.__juce__comboBoxes = [];
+  }
+};
+var ListenerList = class {
+  constructor() {
+    this.listeners = /* @__PURE__ */ new Map();
+    this.listenerId = 0;
+  }
+  addListener(fn) {
+    const newListenerId = this.listenerId++;
+    this.listeners.set(newListenerId, fn);
+    return newListenerId;
+  }
+  removeListener(id) {
+    if (this.listeners.has(id)) {
+      this.listeners.delete(id);
+    }
+  }
+  callListeners(payload) {
+    for (const [, value] of this.listeners) {
+      value(payload);
+    }
+  }
+};
+var EventListenerList = class {
+  constructor() {
+    this.eventListeners = /* @__PURE__ */ new Map();
+  }
+  addEventListener(eventId, fn) {
+    let list = this.eventListeners.get(eventId);
+    if (!list) {
+      list = new ListenerList();
+      this.eventListeners.set(eventId, list);
+    }
+    const id = list.addListener(fn);
+    return [eventId, id];
+  }
+  removeEventListener([eventId, id]) {
+    var _a;
+    (_a = this.eventListeners.get(eventId)) == null ? void 0 : _a.removeListener(id);
+  }
+  emitEvent(eventId, object) {
+    var _a;
+    (_a = this.eventListeners.get(eventId)) == null ? void 0 : _a.callListeners(object);
+  }
+};
+var Backend = class {
+  constructor() {
+    this.listeners = new EventListenerList();
+  }
+  /**
+   * Registers a function to listen to events emitted by the backend. The backend can
+   * emit such events by calling WebBrowserComponent::emitEventIfBrowserIsVisible.
+   *
+   * @param eventId The identifier of the emitted event.
+   * @param fn      The function to be called when the event is received.
+   */
+  addEventListener(eventId, fn) {
+    return this.listeners.addEventListener(eventId, fn);
+  }
+  removeEventListener(handle) {
+    this.listeners.removeEventListener(handle);
+  }
+  /**
+   * Sends an event from the frontend to the native backend.
+   *
+   * @param eventId The identifier of the event to emit.
+   * @param object  The payload to send along with the event.
+   */
+  emitEvent(eventId, object) {
+    window.__JUCE__.postMessage(
+      JSON.stringify({ eventId, payload: object })
+    );
+  }
+  /**
+   * Internal function called by the JUCE backend implementation.
+   *
+   * User Javascript code running inside the WebView should not call this
+   * function.
+   *
+   * @param eventId The identifier of the event to emit.
+   * @param object  The JSON-encoded payload to send along with the event.
+   */
+  emitByBackend(eventId, object) {
+    this.listeners.emitEvent(eventId, JSON.parse(object));
+  }
+};
+if (typeof window.__JUCE__ !== "undefined" && typeof window.__JUCE__.getAndroidUserScripts !== "undefined" && typeof window.inAndroidUserScriptEval === "undefined") {
+  window.inAndroidUserScriptEval = true;
+  (0, eval)(window.__JUCE__.getAndroidUserScripts());
+  delete window.inAndroidUserScriptEval;
+}
+if (typeof window.__JUCE__ === "undefined") {
+  console.warn(
+    "The 'window.__JUCE__' object is undefined. Native integration features will not work. Defining a placeholder 'window.__JUCE__' object."
+  );
+  window.__JUCE__ = {};
+}
+if (typeof window.__JUCE__.postMessage === "undefined") {
+  window.__JUCE__.postMessage = function() {
+  };
+}
+if (typeof window.__JUCE__.initialisationData === "undefined") {
+  window.__JUCE__.initialisationData = new JuceInitialisationData();
+}
+if (typeof window.__JUCE__.backend === "undefined") {
+  window.__JUCE__.backend = new Backend();
+}
+
+// src/index.ts
+var PromiseHandler = class {
+  constructor() {
+    this.lastPromiseId = 0;
+    this.promises = /* @__PURE__ */ new Map();
+    window.__JUCE__.backend.addEventListener("__juce__complete", (payload) => {
+      const { promiseId, result } = payload;
+      const entry = this.promises.get(promiseId);
+      if (entry) {
+        entry.resolve(result);
+        this.promises.delete(promiseId);
+      }
+    });
+  }
+  createPromise() {
+    const promiseId = this.lastPromiseId++;
+    const result = new Promise((resolve, reject) => {
+      this.promises.set(promiseId, { resolve, reject });
+    });
+    return [promiseId, result];
+  }
+};
+var promiseHandler = new PromiseHandler();
+function getNativeFunction(name) {
+  if (!window.__JUCE__.initialisationData.__juce__functions.includes(name))
+    console.warn(
+      `Creating native function binding for '${name}', which is unknown to the backend`
+    );
+  const f = (...args) => {
+    const [promiseId, result] = promiseHandler.createPromise();
+    window.__JUCE__.backend.emitEvent("__juce__invoke", {
+      name,
+      params: args,
+      resultId: promiseId
+    });
+    return result;
+  };
+  return f;
+}
+var versionCheckFunctionName = "__juce__reportJuceFrameworkWebViewVersion";
+if (window.__JUCE__.initialisationData.__juce__functions.includes(
+  versionCheckFunctionName
+)) {
+  getNativeFunction(versionCheckFunctionName)(
+    "1.0.0"
+  ).then((backendVersion) => {
+    if (backendVersion !== "1.0.0") {
+      console.warn(
+        `The backend expected a @juce-framework/webview version of ${backendVersion}, but got ${"1.0.0"}. You should use matching backend and frontend versions.`
+      );
+    }
+  });
+}
+var ListenerList2 = class {
+  constructor() {
+    this.listeners = /* @__PURE__ */ new Map();
+    this.listenerId = 0;
+  }
+  addListener(fn) {
+    const newListenerId = this.listenerId++;
+    this.listeners.set(newListenerId, fn);
+    return newListenerId;
+  }
+  removeListener(id) {
+    if (this.listeners.has(id)) {
+      this.listeners.delete(id);
+    }
+  }
+  callListeners() {
+    for (const [, value] of this.listeners) {
+      value();
+    }
+  }
+};
+var BasicControl_valueChangedEventId = "valueChanged";
+var BasicControl_propertiesChangedId = "propertiesChanged";
+var SliderControl_sliderDragStartedEventId = "sliderDragStarted";
+var SliderControl_sliderDragEndedEventId = "sliderDragEnded";
+var SliderState = class {
+  constructor(name) {
+    this.scaledValue = 0;
+    this.properties = {
+      start: 0,
+      end: 1,
+      skew: 1,
+      name: "",
+      label: "",
+      numSteps: 100,
+      interval: 0,
+      parameterIndex: -1
+    };
+    this.valueChangedEvent = new ListenerList2();
+    this.propertiesChangedEvent = new ListenerList2();
+    if (!window.__JUCE__.initialisationData.__juce__sliders.includes(name))
+      console.warn(
+        "Creating SliderState for '" + name + "', which is unknown to the backend"
+      );
+    this.name = name;
+    this.identifier = "__juce__slider" + this.name;
+    window.__JUCE__.backend.addEventListener(
+      this.identifier,
+      (event) => this.handleEvent(event)
+    );
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: "requestInitialUpdate"
+    });
+  }
+  /**
+   * Sets the normalised value of the corresponding backend parameter. This value is always in the
+   * [0, 1] range (inclusive).
+   *
+   * The meaning of this range is the same as in the case of
+   * AudioProcessorParameter::getValue() (C++).
+   *
+   * @param {String} name
+   */
+  setNormalisedValue(newValue) {
+    this.scaledValue = this.snapToLegalValue(
+      this.normalisedToScaledValue(newValue)
+    );
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: BasicControl_valueChangedEventId,
+      value: this.scaledValue
+    });
+  }
+  /**
+   * This function should be called first thing when the user starts interacting with the slider.
+   */
+  sliderDragStarted() {
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: SliderControl_sliderDragStartedEventId
+    });
+  }
+  /**
+   * This function should be called when the user finished the interaction with the slider.
+   */
+  sliderDragEnded() {
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: SliderControl_sliderDragEndedEventId
+    });
+  }
+  /** Internal. */
+  handleEvent(event) {
+    const e = event;
+    if (e.eventType === BasicControl_valueChangedEventId) {
+      this.scaledValue = e.value;
+      this.valueChangedEvent.callListeners();
+    }
+    if (e.eventType === BasicControl_propertiesChangedId) {
+      let _a = e, { eventType: _ } = _a, rest = __objRest(_a, ["eventType"]);
+      this.properties = rest;
+      this.propertiesChangedEvent.callListeners();
+    }
+  }
+  /**
+   * Returns the scaled value of the parameter. This corresponds to the return value of
+   * NormalisableRange::convertFrom0to1() (C++). This value will differ from a linear
+   * [0, 1] range if a non-default NormalisableRange was set for the parameter.
+   */
+  getScaledValue() {
+    return this.scaledValue;
+  }
+  /**
+   * Returns the normalised value of the corresponding backend parameter. This value is always in the
+   * [0, 1] range (inclusive).
+   *
+   * The meaning of this range is the same as in the case of
+   * AudioProcessorParameter::getValue() (C++).
+   *
+   * @param {String} name
+   */
+  getNormalisedValue() {
+    return Math.pow(
+      (this.scaledValue - this.properties.start) / (this.properties.end - this.properties.start),
+      this.properties.skew
+    );
+  }
+  /** Internal. */
+  normalisedToScaledValue(normalisedValue) {
+    return Math.pow(normalisedValue, 1 / this.properties.skew) * (this.properties.end - this.properties.start) + this.properties.start;
+  }
+  /** Internal. */
+  snapToLegalValue(value) {
+    const interval = this.properties.interval;
+    if (interval == 0) return value;
+    const start = this.properties.start;
+    const clamp = (val, min = 0, max = 1) => Math.max(min, Math.min(max, val));
+    return clamp(
+      start + interval * Math.floor((value - start) / interval + 0.5),
+      this.properties.start,
+      this.properties.end
+    );
+  }
+};
+var sliderStates = /* @__PURE__ */ new Map();
+for (const sliderName of window.__JUCE__.initialisationData.__juce__sliders)
+  sliderStates.set(sliderName, new SliderState(sliderName));
+function getSliderState(name) {
+  let state = sliderStates.get(name);
+  if (!state) {
+    state = new SliderState(name);
+    sliderStates.set(name, state);
+  }
+  return state;
+}
+var ToggleState = class {
+  constructor(name) {
+    this.value = false;
+    this.properties = {
+      name: "",
+      parameterIndex: -1
+    };
+    this.valueChangedEvent = new ListenerList2();
+    this.propertiesChangedEvent = new ListenerList2();
+    if (!window.__JUCE__.initialisationData.__juce__toggles.includes(name))
+      console.warn(
+        "Creating ToggleState for '" + name + "', which is unknown to the backend"
+      );
+    this.name = name;
+    this.identifier = "__juce__toggle" + this.name;
+    window.__JUCE__.backend.addEventListener(
+      this.identifier,
+      (event) => this.handleEvent(event)
+    );
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: "requestInitialUpdate"
+    });
+  }
+  /** Returns the value corresponding to the associated WebToggleRelay's (C++) state. */
+  getValue() {
+    return this.value;
+  }
+  /** Informs the backend to change the associated WebToggleRelay's (C++) state. */
+  setValue(newValue) {
+    this.value = newValue;
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: BasicControl_valueChangedEventId,
+      value: this.value
+    });
+  }
+  /** Internal. */
+  handleEvent(event) {
+    const e = event;
+    if (e.eventType == BasicControl_valueChangedEventId) {
+      this.value = e.value;
+      this.valueChangedEvent.callListeners();
+    }
+    if (e.eventType == BasicControl_propertiesChangedId) {
+      let _a = e, { eventType: _ } = _a, rest = __objRest(_a, ["eventType"]);
+      this.properties = rest;
+      this.propertiesChangedEvent.callListeners();
+    }
+  }
+};
+var toggleStates = /* @__PURE__ */ new Map();
+for (const name of window.__JUCE__.initialisationData.__juce__toggles)
+  toggleStates.set(name, new ToggleState(name));
+function getToggleState(name) {
+  let state = toggleStates.get(name);
+  if (!state) {
+    state = new ToggleState(name);
+    toggleStates.set(name, state);
+  }
+  return state;
+}
+var ComboBoxState = class {
+  constructor(name) {
+    this.value = 0;
+    this.properties = {
+      name: "",
+      parameterIndex: -1,
+      choices: []
+    };
+    this.valueChangedEvent = new ListenerList2();
+    this.propertiesChangedEvent = new ListenerList2();
+    if (!window.__JUCE__.initialisationData.__juce__comboBoxes.includes(name))
+      console.warn(
+        "Creating ComboBoxState for '" + name + "', which is unknown to the backend"
+      );
+    this.name = name;
+    this.identifier = "__juce__comboBox" + this.name;
+    window.__JUCE__.backend.addEventListener(
+      this.identifier,
+      (event) => this.handleEvent(event)
+    );
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: "requestInitialUpdate"
+    });
+  }
+  /**
+   * Returns the value corresponding to the associated WebComboBoxRelay's (C++) state.
+   *
+   * This is an index identifying which element of the properties.choices array is currently
+   * selected.
+   */
+  getChoiceIndex() {
+    return Math.round(this.value * (this.properties.choices.length - 1));
+  }
+  /**
+   * Informs the backend to change the associated WebComboBoxRelay's (C++) state.
+   *
+   * This should be called with the index identifying the selected element from the
+   * properties.choices array.
+   */
+  setChoiceIndex(index) {
+    const numItems = this.properties.choices.length;
+    this.value = numItems > 1 ? index / (numItems - 1) : 0;
+    window.__JUCE__.backend.emitEvent(this.identifier, {
+      eventType: BasicControl_valueChangedEventId,
+      value: this.value
+    });
+  }
+  /** Internal. */
+  handleEvent(event) {
+    const e = event;
+    if (e.eventType == BasicControl_valueChangedEventId) {
+      this.value = e.value;
+      this.valueChangedEvent.callListeners();
+    }
+    if (e.eventType == BasicControl_propertiesChangedId) {
+      let _a = e, { eventType: _ } = _a, rest = __objRest(_a, ["eventType"]);
+      this.properties = rest;
+      this.propertiesChangedEvent.callListeners();
+    }
+  }
+};
+var comboBoxStates = /* @__PURE__ */ new Map();
+for (const name of window.__JUCE__.initialisationData.__juce__comboBoxes)
+  comboBoxStates.set(name, new ComboBoxState(name));
+function getComboBoxState(name) {
+  let state = comboBoxStates.get(name);
+  if (!state) {
+    state = new ComboBoxState(name);
+    comboBoxStates.set(name, state);
+  }
+  return state;
+}
+function getBackendResourceAddress(path) {
+  const platform = window.__JUCE__.initialisationData.__juce__platform.length > 0 ? window.__JUCE__.initialisationData.__juce__platform[0] : "";
+  if (platform == "windows" || platform == "android")
+    return "https://juce.backend/" + path;
+  if (platform == "macos" || platform == "ios" || platform == "linux")
+    return "juce://juce.backend/" + path;
+  console.warn(
+    "getBackendResourceAddress() called, but no JUCE native backend is detected."
+  );
+  return path;
+}
+var _ControlParameterIndexUpdater_instances, getControlParameterIndex_fn;
+var ControlParameterIndexUpdater = class {
+  constructor(controlParameterIndexAnnotation) {
+    __privateAdd(this, _ControlParameterIndexUpdater_instances);
+    this.lastElement = null;
+    this.lastControlParameterIndex = -1;
+    this.controlParameterIndexAnnotation = controlParameterIndexAnnotation;
+  }
+  handleMouseMove(event) {
+    const currentElement = document.elementFromPoint(
+      event.clientX,
+      event.clientY
+    );
+    if (currentElement === this.lastElement) return;
+    this.lastElement = currentElement;
+    let controlParameterIndex = -1;
+    if (currentElement !== null)
+      controlParameterIndex = __privateMethod(this, _ControlParameterIndexUpdater_instances, getControlParameterIndex_fn).call(this, currentElement);
+    if (controlParameterIndex === this.lastControlParameterIndex) return;
+    this.lastControlParameterIndex = controlParameterIndex;
+    window.__JUCE__.backend.emitEvent(
+      "__juce__controlParameterIndexChanged",
+      controlParameterIndex
+    );
+  }
+};
+_ControlParameterIndexUpdater_instances = new WeakSet();
+//==============================================================================
+getControlParameterIndex_fn = function(element) {
+  const isValidNonRootElement = (e) => {
+    return e !== null && e !== document.documentElement;
+  };
+  while (isValidNonRootElement(element)) {
+    if (element.hasAttribute(this.controlParameterIndexAnnotation)) {
+      const attribute = element.getAttribute(
+        this.controlParameterIndexAnnotation
+      );
+      const attributeValue = Number(attribute);
+      if (attribute === null || Number.isNaN(attributeValue)) {
+        console.error(
+          `Expected the "${this.controlParameterIndexAnnotation}" attribute to be a number,
+             got "${attributeValue}". You should set this attribute to the parameterIndex member
+             of the corresponding SliderState, ToggleState or ComboBoxState object's properties.`
+        );
+        return -1;
+      }
+      return attributeValue;
+    }
+    element = element.parentElement;
+  }
+  return -1;
+};
+
+window.Juce = {
+  ControlParameterIndexUpdater: ControlParameterIndexUpdater,
+  getBackendResourceAddress: getBackendResourceAddress,
+  getComboBoxState: getComboBoxState,
+  getNativeFunction: getNativeFunction,
+  getSliderState: getSliderState,
+  getToggleState: getToggleState
+};
+/* ===================== END inlined JUCE webview-interop ===================== */
+/* ============================================================
+   VRS Vocal Comp - shared UI core
+   Works with or without a JUCE backend: when JUCE_NATIVE is true each
+   knob binds to a WebSliderRelay and C++ owns the value mapping; in a
+   plain browser it falls back to local values for visual testing.
+   ============================================================ */
+(function () {
+  "use strict";
+
+  var Juce = window.Juce;
+  var NS   = "http://www.w3.org/2000/svg";
+
+  /* knob geometry, in viewBox units (0..100) */
+  var R_ARC = 39, R_BEZEL = 33, R_FACE = 28,
+      R_TICK_IN = 43, R_TICK_OUT = 47,
+      R_PTR_IN = 9, R_PTR_OUT = 24, R_HUB = 4,
+      CIRC = 2 * Math.PI * R_ARC, SWEEP = CIRC * 0.75,
+      ANG_MIN = -135, ANG_SPAN = 270, TICKS = 20;
+
+  var knobs = {}, manualMode = false, bypassed = false;
+
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+  function el(tag, attrs){ var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+  /* ---- local tapers: only used when there is no backend ---- */
+  function localToNorm(k, v){
+    return k.taper === "log" ? Math.log(v / k.min) / Math.log(k.max / k.min)
+                             : (v - k.min) / (k.max - k.min); }
+  function localFromNorm(k, n){ n = clamp01(n);
+    return k.taper === "log" ? k.min * Math.pow(k.max / k.min, n)
+                             : k.min + n * (k.max - k.min); }
+
+  /* The backend answers requestInitialUpdate asynchronously, so for the first
+     frames properties.start == properties.end and getNormalisedValue() returns
+     NaN (0/0). Falling back to the declared default keeps the arc and pointer
+     sane instead of rendering rotate(NaN) until the update lands. */
+  function backendReady(k){
+    /* gotValue guards the other half of the race: properties can arrive before
+       the first value event, and SliderState.scaledValue starts at 0 - which is
+       a legal value for several of these parameters, so it cannot be detected
+       by inspection. Until a real value event lands we show the declared
+       default instead of a spurious 0. */
+    return k.state && k.gotValue && k.state.properties
+        && k.state.properties.end !== k.state.properties.start;
+  }
+  function getNorm(k){
+    if (backendReady(k)) {
+      var n = k.state.getNormalisedValue();
+      if (isFinite(n)) return clamp01(n);
+    }
+    return clamp01(localToNorm(k, k.value));
+  }
+  function getScaled(k){
+    if (backendReady(k)) {
+      var v = k.state.getScaledValue();
+      if (isFinite(v)) return v;
+    }
+    return k.value;
+  }
+  function valueToNorm(k, v){
+    if (k.state && k.state.properties && k.state.properties.end !== k.state.properties.start) {
+      var p = k.state.properties;
+      return clamp01(Math.pow((v - p.start) / (p.end - p.start), p.skew || 1));
+    }
+    return clamp01(localToNorm(k, v));
+  }
+  function applyNorm(k, n){
+    n = clamp01(n);
+    if (k.state) k.state.setNormalisedValue(n);   /* backend echoes back */
+    else { k.value = localFromNorm(k, n); }
+    render(k);
+  }
+
+  /* ---- formatting: always shows the real parameter value ---- */
+  function fmt(k, v){
+    switch (k.unit) {
+      case "%":  return Math.round(v) + "%";
+      case "Hz": return Math.round(v) + " Hz";
+      case ":1": return v.toFixed(1) + ":1";
+      case "ms": return (v < 10 ? v.toFixed(1) : Math.round(v)) + " ms";
+      case "dB": return (k.bipolar && v >= 0 ? "+" : "") + v.toFixed(1) + " dB";
+      default:   return v.toFixed(1);
+    }
+  }
+  function zoneOf(v){ return v < 33 ? "SMOOTH" : v > 66 ? "AGGRESSIVE" : "BALANCED"; }
+
+  /* ════════════════════════════════════════════════════════════
+     Knob construction.
+
+     The pointer is an SVG <line> rotated about (50,50) - the true
+     centre of the viewBox - so its pivot IS the knob axis by
+     construction, at every size. The previous build used an
+     absolutely positioned <div> whose transform-origin sat ~49px
+     above centre, which is why indicators appeared to float.
+     ════════════════════════════════════════════════════════════ */
+  function buildSvg(k){
+    var svg = el("svg", { viewBox: "0 0 100 100" });
+
+    /* scale ring - engraved marks around the collar */
+    for (var i = 0; i <= TICKS; i++) {
+      var a  = (ANG_MIN + i * (ANG_SPAN / TICKS)) * Math.PI / 180,
+          rO = (i % 5 === 0) ? R_TICK_OUT : R_TICK_OUT - 2;
+      svg.appendChild(el("line", { class: "k-tick",
+        x1: 50 + R_TICK_IN * Math.sin(a), y1: 50 - R_TICK_IN * Math.cos(a),
+        x2: 50 + rO       * Math.sin(a), y2: 50 - rO       * Math.cos(a) }));
+    }
+
+    /* value arc */
+    svg.appendChild(el("circle", { class: "k-track", cx: 50, cy: 50, r: R_ARC,
+      "stroke-width": k.stroke, transform: "rotate(135 50 50)",
+      "stroke-dasharray": SWEEP + " " + CIRC }));
+    svg.appendChild(el("circle", { class: "k-arc", cx: 50, cy: 50, r: R_ARC,
+      "stroke-width": k.stroke, transform: "rotate(135 50 50)" }));
+
+    /* machined aluminium rim */
+    svg.appendChild(el("circle", { class: "k-rim", cx: 50, cy: 50, r: R_BEZEL,
+      fill: "none", stroke: "url(#kRimG)", "stroke-width": 5 }));
+
+    /* knurling around the rim */
+    for (var n = 0; n < 44; n++) {
+      var ka = (n * 360 / 44) * Math.PI / 180;
+      svg.appendChild(el("line", { class: "k-knurl",
+        x1: 50 + (R_BEZEL - 2.1) * Math.sin(ka), y1: 50 - (R_BEZEL - 2.1) * Math.cos(ka),
+        x2: 50 + (R_BEZEL + 2.1) * Math.sin(ka), y2: 50 - (R_BEZEL + 2.1) * Math.cos(ka) }));
+    }
+
+    /* moulded cap + specular highlight */
+    svg.appendChild(el("circle", { cx: 50, cy: 50, r: R_FACE, fill: "url(#kCapG)" }));
+    svg.appendChild(el("ellipse", { cx: 50, cy: 39, rx: 19, ry: 11, fill: "url(#kGloss)" }));
+    svg.appendChild(el("circle", { cx: 50, cy: 50, r: R_FACE, fill: "none",
+      stroke: "rgba(0,0,0,.55)", "stroke-width": 1 }));
+
+    if (k.bipolar)
+      svg.appendChild(el("line", { class: "k-notch", x1: 50, y1: 2, x2: 50, y2: 8 }));
+
+    /* Pointer: two coincident lines (dark relief under, bright on top), both
+       rotated about (50,50) - the true axis of the knob in viewBox space. */
+    k.ptrSh = el("line", { class: "k-ptr-sh",
+      x1: 50, y1: 50 - R_PTR_IN + 0.6, x2: 50, y2: 50 - R_PTR_OUT + 0.6 });
+    k.ptr   = el("line", { class: "k-ptr",
+      x1: 50, y1: 50 - R_PTR_IN,       x2: 50, y2: 50 - R_PTR_OUT });
+    svg.appendChild(k.ptrSh);
+    svg.appendChild(k.ptr);
+
+    /* centre hub hides the pointer root so it reads as one moulded part */
+    svg.appendChild(el("circle", { cx: 50, cy: 50, r: R_HUB, fill: "url(#kHubG)",
+      stroke: "rgba(0,0,0,.7)", "stroke-width": 0.7 }));
+
+    k.el.appendChild(svg);
+    k.arc   = svg.querySelector(".k-arc");
+    k.ticks = svg.querySelectorAll(".k-tick");
+  }
+
+  function render(k){
+    var n = getNorm(k), scaled = getScaled(k), len, start;
+
+    if (k.bipolar) {
+      var half = SWEEP / 2;
+      if (n >= 0.5) { start = half; len = (n - 0.5) * SWEEP; }
+      else          { len = (0.5 - n) * SWEEP; start = half - len; }
+    } else { start = 0; len = n * SWEEP; }
+
+    k.arc.setAttribute("stroke-dasharray", len + " " + CIRC);
+    k.arc.setAttribute("stroke-dashoffset", -start);
+
+    /* single source of truth for the pointer angle - both layers share it */
+    var rot = "rotate(" + (ANG_MIN + n * ANG_SPAN) + " 50 50)";
+    k.ptr.setAttribute("transform", rot);
+    k.ptrSh.setAttribute("transform", rot);
+
+    for (var i = 0; i < k.ticks.length; i++)
+      k.ticks[i].classList.toggle("lit", (i / TICKS) <= n + 0.001);
+
+    k.el.style.setProperty("--v", n.toFixed(3));
+    if (k.valueEl) k.valueEl.textContent = fmt(k, scaled);
+    if (k.param === "character") {
+      var z = document.getElementById("character-zone");
+      if (z) z.textContent = zoneOf(scaled);
+    }
+    k.el.setAttribute("aria-valuenow", scaled.toFixed(2));
+  }
+
+  function build(node){
+    var k = { el: node, param: node.dataset.param,
+      min: +node.dataset.min, max: +node.dataset.max, def: +node.dataset.default,
+      unit: node.dataset.unit, taper: node.dataset.taper || "lin",
+      bipolar: node.dataset.bipolar === "1", stroke: +node.dataset.stroke,
+      valueEl: document.getElementById(node.dataset.param + "-value"),
+      value: +node.dataset.default, state: null, gotValue: false };
+
+    buildSvg(k);
+    node.setAttribute("aria-label", k.param);
+    node.setAttribute("aria-valuemin", k.min);
+    node.setAttribute("aria-valuemax", k.max);
+
+    if (JUCE_NATIVE) {
+      k.state = Juce.getSliderState(k.param);
+      k.state.valueChangedEvent.addListener(function(){ k.gotValue = true; render(k); });
+      k.state.propertiesChangedEvent.addListener(function(){ render(k); });
+    }
+
+    var dragging = false, lastY = 0;
+    node.addEventListener("pointerdown", function(e){
+      dragging = true; lastY = e.clientY; node.setPointerCapture(e.pointerId);
+      if (k.state) k.state.sliderDragStarted(); e.preventDefault(); });
+    node.addEventListener("pointermove", function(e){
+      if (!dragging) return;
+      var dy = lastY - e.clientY; lastY = e.clientY;
+      applyNorm(k, getNorm(k) + dy / (e.shiftKey ? 1000 : 200)); });
+    function end(e){
+      if (!dragging) return; dragging = false;
+      if (k.state) k.state.sliderDragEnded();
+      if (e.pointerId !== undefined && node.hasPointerCapture(e.pointerId))
+        node.releasePointerCapture(e.pointerId); }
+    node.addEventListener("pointerup", end);
+    node.addEventListener("pointercancel", end);
+    node.addEventListener("dblclick", function(){
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, valueToNorm(k, k.def));
+      if (k.state) k.state.sliderDragEnded(); });
+    node.addEventListener("wheel", function(e){
+      e.preventDefault();
+      var step = (e.shiftKey ? 0.005 : 0.01) * (e.deltaY < 0 ? 1 : -1);
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, getNorm(k) + step);
+      if (k.state) k.state.sliderDragEnded(); }, { passive: false });
+    node.addEventListener("keydown", function(e){
+      var dir = (e.key === "ArrowUp" || e.key === "ArrowRight") ? 1
+              : (e.key === "ArrowDown" || e.key === "ArrowLeft") ? -1 : 0;
+      if (!dir) return;
+      e.preventDefault();
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, getNorm(k) + dir * (e.shiftKey ? 0.005 : 0.02));
+      if (k.state) k.state.sliderDragEnded(); });
+
+    render(k);
+    knobs[k.param] = k;
+    return k;
+  }
+
+  /* ---------- MACRO / MANUAL ---------- */
+  var manualSect = document.getElementById("manual-sect"),
+      modeSwitch = document.getElementById("mode-switch"),
+      modeState  = null;
+
+  function renderMode(){
+    Array.prototype.forEach.call(modeSwitch.querySelectorAll("button"), function(b){
+      b.classList.toggle("on", (b.dataset.mode === "manual") === manualMode); });
+    manualSect.classList.toggle("off", !manualMode);
+    ["amount", "character"].forEach(function(p){
+      if (knobs[p] && p === "amount") knobs[p].el.style.opacity = manualMode ? 0.4 : 1; });
+  }
+  modeSwitch.addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    manualMode = (b.dataset.mode === "manual");
+    if (modeState) modeState.setValue(manualMode);
+    renderMode();
+  });
+
+  /* ---------- bypass ---------- */
+  var ui = document.getElementById("plugin-ui"),
+      bb = document.getElementById("bypass-btn"),
+      bypassState = null;
+  function renderBypass(){
+    bb.classList.toggle("on", bypassed);
+    ui.classList.toggle("bypassed", bypassed);
+    bb.setAttribute("aria-pressed", bypassed ? "true" : "false"); }
+  bb.addEventListener("click", function(){
+    bypassed = !bypassed;
+    if (bypassState) bypassState.setValue(bypassed);
+    renderBypass(); });
+
+  /* ---------- presets (MACRO values, unchanged) ---------- */
+  var PRESETS = {
+    init:      { amount:35, character:50, mix:100, output:0, sc_hpf:85 },
+    intimate:  { amount:25, character:15, mix:100, output:0, sc_hpf:70 },
+    pop:       { amount:45, character:55, mix:100, output:0, sc_hpf:85 },
+    rap:       { amount:60, character:85, mix:100, output:0, sc_hpf:100 },
+    crush:     { amount:85, character:90, mix:45,  output:0, sc_hpf:110 },
+    broadcast: { amount:40, character:30, mix:100, output:0, sc_hpf:90 }
+  };
+  document.getElementById("preset-select").addEventListener("change", function(e){
+    var p = PRESETS[e.target.value]; if (!p) return;
+    for (var key in p) {
+      var k = knobs[key]; if (!k) continue;
+      if (k.state) k.state.sliderDragStarted();
+      applyNorm(k, valueToNorm(k, p[key]));
+      if (k.state) k.state.sliderDragEnded();
+    }
+  });
+
+  /* ---------- canvases ---------- */
+  function ctxOf(id){
+    var c = document.getElementById(id), x = c.getContext("2d"),
+        d = window.devicePixelRatio || 1;
+    c.width = Math.round(c.clientWidth * d); c.height = Math.round(c.clientHeight * d);
+    x.setTransform(d, 0, 0, d, 0, 0); return { c: c, x: x }; }
+  var wave, grc, inM, outM;
+  function sizeAll(){ wave = ctxOf("wave"); grc = ctxOf("gr-canvas");
+    inM = ctxOf("in-meter"); outM = ctxOf("out-meter"); }
+
+  function rr(x,a,b,w,h,r){ x.beginPath(); x.moveTo(a+r,b);
+    x.arcTo(a+w,b,a+w,b+h,r); x.arcTo(a+w,b+h,a,b+h,r);
+    x.arcTo(a,b+h,a,b,r); x.arcTo(a,b,a+w,b,r); x.closePath(); }
+
+  var tSec = 0, envHist = [];
+  function drawWave(){
+    var W = wave.c.clientWidth, H = wave.c.clientHeight, x = wave.x;
+    x.clearRect(0,0,W,H);
+    var bars = Math.floor(W/4);
+    if (envHist.length !== bars) envHist = new Array(bars).fill(0);
+    for (var i = bars-1; i > 0; i--) envHist[i] = envHist[i-1];
+    envHist[0] = bypassed ? 0.05 : Math.min(1, lvlIn);
+    for (var j = 0; j < bars; j++) {
+      var h = Math.max(1.5, envHist[j] * (H*0.44));
+      var g = x.createLinearGradient(0, H/2-h, 0, H/2+h);
+      g.addColorStop(0,"rgba(227,169,82,0.10)");
+      g.addColorStop(0.5,"rgba(227,169,82,0.85)");
+      g.addColorStop(1,"rgba(227,169,82,0.10)");
+      x.fillStyle = g; x.fillRect(W-4-j*4, H/2-h, 2, h*2);
+    }
+    x.strokeStyle = "rgba(227,169,82,0.16)"; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(0,H/2+0.5); x.lineTo(W,H/2+0.5); x.stroke();
+  }
+
+  var MAXGR = 20, grO = 0, grF = 0, tgO = 0, tgF = 0,
+      lvlIn = 0, lvlOut = 0, tgIn = 0, tgOut = 0,
+      readout = document.getElementById("gr-readout");
+
+  function drawGr(){
+    var W = grc.c.clientWidth, H = grc.c.clientHeight, x = grc.x;
+    x.clearRect(0,0,W,H);
+    x.fillStyle = "#05070A"; rr(x,0,0,W,H,2); x.fill();
+    var total = Math.min(MAXGR, grO + grF),
+        segs = 44, gap = 2, sw = (W-16-(segs-1)*gap)/segs,
+        lit = Math.round(total/MAXGR*segs);
+    for (var i = 0; i < segs; i++) {
+      var f = i/segs;
+      x.fillStyle = i < lit ? (f > 0.60 ? "#E5484D" : f > 0.35 ? "#E3A952" : "#3FD68A")
+                            : "#12171C";
+      rr(x, 8+i*(sw+gap), 9, sw, H-24, 1.5); x.fill();
+    }
+    x.fillStyle = "#97A3AF"; x.font = "6.5px -apple-system,system-ui,sans-serif";
+    x.textBaseline = "top";
+    [3,6,12,20].forEach(function(d){ x.fillText("-"+d, 8+(d/MAXGR)*(W-16)-5, H-12); });
+    readout.textContent = "-" + total.toFixed(1) + " dB";
+    readout.style.color = total > 12 ? "#E5484D" : "#E3A952";
+  }
+  function drawIo(m, v, warm){
+    var W = m.c.clientWidth, H = m.c.clientHeight, x = m.x;
+    x.clearRect(0,0,W,H); x.fillStyle = "#0A0E12"; rr(x,0,0,W,H,1); x.fill();
+    var n = 22, gp = 1, sw = (W-(n-1)*gp)/n, lit = Math.round(clamp01(v)*n);
+    for (var i = 0; i < n; i++) {
+      x.fillStyle = i < lit ? (i/n > 0.86 ? "#E5484D" : i/n > 0.70 ? "#E3A952" : "#3FD68A")
+                            : "#161B21";
+      x.fillRect(i*(sw+gp), 0, sw, H);
+    }
+  }
+
+  /* pushed from C++ (or the browser harness) */
+  function setGR(o,f){ tgO = Math.max(0,Math.min(MAXGR,o||0)); tgF = Math.max(0,Math.min(MAXGR,f||0)); }
+  function setLevels(i,o){ tgIn = clamp01(i||0); tgOut = clamp01(o||0); }
+  window.__vrsSetGR = setGR;
+  window.__vrsSetLevels = setLevels;
+
+  var lastT = 0;
+  function frame(ts){
+    var dt = lastT ? Math.min(0.1, (ts-lastT)/1000) : 0.016; lastT = ts; tSec += dt;
+    var rel = Math.exp(-dt/0.18);
+    grO = tgO > grO ? tgO : tgO + (grO-tgO)*rel;
+    grF = tgF > grF ? tgF : tgF + (grF-tgF)*rel;
+    var relL = Math.exp(-dt/0.25);
+    lvlIn  = tgIn  > lvlIn  ? tgIn  : tgIn  + (lvlIn-tgIn)*relL;
+    lvlOut = tgOut > lvlOut ? tgOut : tgOut + (lvlOut-tgOut)*relL;
+    drawWave(); drawGr(); drawIo(inM, lvlIn, false); drawIo(outM, lvlOut, true);
+    requestAnimationFrame(frame);
+  }
+
+  function init(){
+    Array.prototype.forEach.call(document.querySelectorAll(".knob"), build);
+
+    if (JUCE_NATIVE) {
+      bypassState = Juce.getToggleState("bypass");
+      bypassState.valueChangedEvent.addListener(function(){
+        bypassed = bypassState.getValue(); renderBypass(); });
+      bypassed = bypassState.getValue();
+
+      modeState = Juce.getToggleState("manual_mode");
+      modeState.valueChangedEvent.addListener(function(){
+        manualMode = modeState.getValue(); renderMode(); });
+      manualMode = modeState.getValue();
+
+      window.__JUCE__.backend.addEventListener("grUpdate", function(ev){
+        if (!ev) return;
+        setGR(ev.opto, ev.fet);
+        if (ev.lin !== undefined) setLevels(ev.lin, ev.lout);
+      });
+    }
+
+    renderBypass(); renderMode();
+    sizeAll(); window.addEventListener("resize", sizeAll);
+    requestAnimationFrame(frame);
+    window.__pluginBooted = true;
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+</script>
+</body>
+</html>

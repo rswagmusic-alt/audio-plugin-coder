@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Victor R Swag Vocal Compressor</title>
+<!--
+  v1-test.html - Design preview for VictorRSwagVocalComp
+  WebView framework. This structure is production-ready and becomes
+  Source/ui/public/index.html at /impl, minus the PREVIEW SIMULATION block.
+
+  webview-008 compliance:
+    - ALL JavaScript inline in ONE <script> block
+    - no type="module", no import/export, no <script src>
+    - no external CSS, fonts or images
+    - boots on document.readyState, not DOMContentLoaded alone
+    - sets window.__pluginBooted so C++ can detect a dead UI
+-->
+<style>
+  :root {
+    --bg:         #0B0D10;
+    --panel:      #12161B;
+    --line:       #232A32;
+    --text:       #E6EDF3;
+    --muted:      #7D8894;
+    --accent:     #00F5FF;
+    --accent-dim: #0A7F88;
+    --warn:       #FF4D6D;
+    --pad: 24px;
+  }
+
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 640px;
+    height: 420px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #plugin-ui {
+    width: 640px;
+    height: 420px;
+    padding: var(--pad);
+    padding-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    transition: opacity 120ms ease-out;
+  }
+  #plugin-ui.bypassed { opacity: 0.45; }
+
+  /* ---------- header ---------- */
+  .header {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+    flex: 0 0 auto;
+  }
+  .wordmark {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    transition: color 120ms ease-out;
+  }
+  .wordmark:hover { color: var(--text); }
+
+  #preset-select {
+    width: 180px;
+    height: 28px;
+    background-color: var(--panel);
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2300F5FF' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 0 26px 0 10px;
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 120ms ease-out;
+  }
+  #preset-select:hover { border-color: var(--accent-dim); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    height: 196px;
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    flex: 0 0 auto;
+  }
+
+  .control { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .value {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .zone {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--accent-dim);
+    height: 11px;
+  }
+
+  /* ---------- knobs ---------- */
+  .knob {
+    position: relative;
+    cursor: ns-resize;
+    outline: none;
+    touch-action: none;
+  }
+  .knob svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .knob .k-body { fill: var(--panel); }
+  .knob .k-track {
+    fill: none;
+    stroke: var(--line);
+    stroke-linecap: round;
+    transition: stroke 120ms ease-out;
+  }
+  .knob:hover .k-track { stroke: #2C343D; }
+  .knob .k-arc {
+    fill: none;
+    stroke: var(--accent);
+    stroke-linecap: round;
+    opacity: 0.85;
+    transition: opacity 120ms ease-out;
+  }
+  .knob:hover .k-arc, .knob.dragging .k-arc { opacity: 1; }
+  .knob .k-notch { stroke: var(--muted); stroke-width: 1; opacity: 0.6; }
+  .knob .k-ind {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    background: var(--text);
+    border-radius: 1px;
+    transform-origin: 50% 100%;
+    opacity: 0.75;
+    transition: opacity 120ms ease-out;
+  }
+  .knob:hover .k-ind, .knob.dragging .k-ind { opacity: 1; }
+  .knob:focus-visible::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 1px solid var(--accent);
+    opacity: 0.4;
+    border-radius: 50%;
+  }
+
+  .knob.hero   { width: 150px; height: 150px; }
+  .knob.second { width: 90px;  height: 90px;  }
+  .knob.mini   { width: 56px;  height: 56px;  }
+
+  .knob.hero .k-ind   { height: 26px; margin-top: -75px; margin-left: -1px; }
+  .knob.second .k-ind { height: 16px; margin-top: -45px; margin-left: -1px; }
+  .knob.mini .k-ind   { height: 10px; margin-top: -28px; margin-left: -1px; }
+
+  /* the Amount knob is the only glowing element */
+  .knob.hero .k-arc {
+    filter: drop-shadow(0 0 6px rgba(0, 245, 255, calc(0.25 + var(--v, 0) * 0.45)));
+  }
+
+  /* ---------- meter ---------- */
+  .meter-row {
+    height: 44px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+  .meter-tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    width: 20px;
+  }
+  #gr-canvas {
+    flex: 1 1 auto;
+    height: 44px;
+    display: block;
+    border-radius: 4px;
+    cursor: crosshair;
+  }
+  #gr-readout {
+    width: 62px;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- utility ---------- */
+  .utility {
+    height: 60px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    flex: 0 0 auto;
+  }
+  .utility .control { gap: 4px; }
+  .utility .label { font-size: 9px; }
+  .utility .value { font-size: 11px; }
+  .spacer { flex: 1 1 auto; }
+
+  #bypass-btn {
+    width: 96px;
+    height: 32px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    outline: none;
+    transition: all 120ms ease-out;
+  }
+  #bypass-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  #bypass-btn.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #06181B;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0ms !important; }
+    .knob.hero .k-arc { filter: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="plugin-ui">
+
+  <div class="header">
+    <div class="wordmark">VRS Vocal Comp</div>
+    <select id="preset-select" title="Factory presets">
+      <option value="init">Init</option>
+      <option value="intimate">Intimate Vocal</option>
+      <option value="pop" selected>Pop Lead</option>
+      <option value="rap">Rap Upfront</option>
+      <option value="crush">Parallel Crush</option>
+      <option value="broadcast">Broadcast Even</option>
+    </select>
+  </div>
+
+  <div class="hero">
+    <div class="control">
+      <div class="label">Character</div>
+      <div class="knob second" id="character-knob" tabindex="0" role="slider"
+           data-param="character" data-min="0" data-max="100" data-default="50"
+           data-unit="%" data-stroke="5">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="34"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="character-value">50%</div>
+      <div class="zone" id="character-zone">Balanced</div>
+    </div>
+
+    <div class="control">
+      <div class="label">Amount</div>
+      <div class="knob hero" id="amount-knob" tabindex="0" role="slider"
+           data-param="amount" data-min="0" data-max="100" data-default="35"
+           data-unit="%" data-stroke="7">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="33"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="amount-value">35%</div>
+      <div class="zone"></div>
+    </div>
+
+    <div class="control">
+      <div class="label">Mix</div>
+      <div class="knob second" id="mix-knob" tabindex="0" role="slider"
+           data-param="mix" data-min="0" data-max="100" data-default="100"
+           data-unit="%" data-stroke="5">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="34"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="mix-value">100%</div>
+      <div class="zone"></div>
+    </div>
+  </div>
+
+  <div class="meter-row">
+    <div class="meter-tag">GR</div>
+    <canvas id="gr-canvas" title="Gain reduction - hover to split by stage"></canvas>
+    <div id="gr-readout">-0.0 dB</div>
+  </div>
+
+  <div class="utility">
+    <div class="control">
+      <div class="label">SC HPF</div>
+      <div class="knob mini" id="sc_hpf-knob" tabindex="0" role="slider"
+           data-param="sc_hpf" data-min="20" data-max="300" data-default="85"
+           data-unit="Hz" data-taper="log" data-stroke="4">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="33"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="sc_hpf-value">85 Hz</div>
+    </div>
+
+    <div class="control">
+      <div class="label">Output</div>
+      <div class="knob mini" id="output-knob" tabindex="0" role="slider"
+           data-param="output" data-min="-12" data-max="12" data-default="0"
+           data-unit="dB" data-bipolar="1" data-stroke="4">
+        <svg viewBox="0 0 100 100">
+          <circle class="k-body" cx="50" cy="50" r="33"></circle>
+          <circle class="k-track" cx="50" cy="50" r="42"></circle>
+          <circle class="k-arc"   cx="50" cy="50" r="42"></circle>
+          <line class="k-notch" x1="50" y1="4" x2="50" y2="11"></line>
+        </svg>
+        <div class="k-ind"></div>
+      </div>
+      <div class="value" id="output-value">+0.0 dB</div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <button id="bypass-btn" type="button">Bypass</button>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   VictorRSwagVocalComp - UI
+   ONE inline script block. No modules, no imports, no src.
+   ============================================================ */
+(function () {
+  "use strict";
+
+  /* ---------- JUCE bridge (webview-008 safe shim) ---------- */
+  var JUCE_PRESENT = (typeof window.__JUCE__ !== "undefined");
+
+  window.Juce = window.Juce || {};
+  window.Juce.getSliderState = window.Juce.getSliderState || function (name) {
+    if (!JUCE_PRESENT) return null;
+    var backend = window.__JUCE__.backend;
+    return {
+      name: name,
+      setNormalisedValue: function (v) {
+        backend.emitEvent("__juce__sliderValueChanged", { name: name, value: v });
+      },
+      valueChangedEvent: {
+        addListener: function (fn) {
+          backend.addEventListener("__juce__sliderValueChanged", function (ev) {
+            if (ev && ev.name === name) fn(ev.value);
+          });
+        }
+      }
+    };
+  };
+  window.Juce.getToggleState = window.Juce.getToggleState || function (name) {
+    if (!JUCE_PRESENT) return null;
+    var backend = window.__JUCE__.backend;
+    return {
+      name: name,
+      setValue: function (v) {
+        backend.emitEvent("__juce__toggleValueChanged", { name: name, value: !!v });
+      }
+    };
+  };
+
+  /* ---------- geometry ---------- */
+  var R = 42;
+  var CIRC = 2 * Math.PI * R;       /* 263.894 */
+  var SWEEP = CIRC * 0.75;          /* 270 degrees = 197.920 */
+
+  /* ---------- tapers ---------- */
+  function toNorm(k, value) {
+    if (k.taper === "log") {
+      return Math.log(value / k.min) / Math.log(k.max / k.min);
+    }
+    return (value - k.min) / (k.max - k.min);
+  }
+  function fromNorm(k, n) {
+    n = Math.max(0, Math.min(1, n));
+    if (k.taper === "log") {
+      return k.min * Math.pow(k.max / k.min, n);
+    }
+    return k.min + n * (k.max - k.min);
+  }
+
+  /* ---------- formatting ---------- */
+  function formatValue(k, v) {
+    if (k.unit === "%")  return Math.round(v) + "%";
+    if (k.unit === "Hz") return Math.round(v) + " Hz";
+    if (k.unit === "dB") return (v >= 0 ? "+" : "") + v.toFixed(1) + " dB";
+    return v.toFixed(1);
+  }
+  function characterZone(v) {
+    if (v < 33) return "Smooth";
+    if (v > 66) return "Aggressive";
+    return "Balanced";
+  }
+
+  /* ---------- knob ---------- */
+  var knobs = {};
+
+  function buildKnob(el) {
+    var k = {
+      el: el,
+      param: el.dataset.param,
+      min: parseFloat(el.dataset.min),
+      max: parseFloat(el.dataset.max),
+      def: parseFloat(el.dataset.default),
+      unit: el.dataset.unit,
+      taper: el.dataset.taper || "linear",
+      bipolar: el.dataset.bipolar === "1",
+      stroke: parseFloat(el.dataset.stroke),
+      arc: el.querySelector(".k-arc"),
+      track: el.querySelector(".k-track"),
+      ind: el.querySelector(".k-ind"),
+      valueEl: document.getElementById(el.dataset.param + "-value"),
+      zoneEl: document.getElementById(el.dataset.param + "-zone"),
+      value: 0,
+      state: null
+    };
+
+    k.track.setAttribute("stroke-width", k.stroke);
+    k.arc.setAttribute("stroke-width", k.stroke);
+    k.track.setAttribute("transform", "rotate(135 50 50)");
+    k.arc.setAttribute("transform", "rotate(135 50 50)");
+    k.track.setAttribute("stroke-dasharray", SWEEP + " " + CIRC);
+
+    k.state = window.Juce.getSliderState(k.param);
+    if (k.state && k.state.valueChangedEvent) {
+      k.state.valueChangedEvent.addListener(function (n) {
+        setKnob(k, fromNorm(k, n), false);
+      });
+    }
+
+    attachKnobEvents(k);
+    setKnob(k, k.def, false);
+    knobs[k.param] = k;
+    return k;
+  }
+
+  function setKnob(k, value, notify) {
+    value = Math.max(k.min, Math.min(k.max, value));
+    k.value = value;
+    var n = toNorm(k, value);
+
+    /* arc */
+    var len, start;
+    if (k.bipolar) {
+      var half = SWEEP / 2;
+      if (n >= 0.5) { start = half; len = (n - 0.5) * SWEEP; }
+      else          { len = (0.5 - n) * SWEEP; start = half - len; }
+    } else {
+      start = 0;
+      len = n * SWEEP;
+    }
+    k.arc.setAttribute("stroke-dasharray", len + " " + CIRC);
+    k.arc.setAttribute("stroke-dashoffset", -start);
+
+    /* indicator + glow intensity */
+    k.ind.style.transform = "rotate(" + (-135 + n * 270) + "deg)";
+    k.el.style.setProperty("--v", n.toFixed(3));
+
+    /* readouts */
+    if (k.valueEl) k.valueEl.textContent = formatValue(k, value);
+    if (k.param === "character" && k.zoneEl) k.zoneEl.textContent = characterZone(value);
+    k.el.setAttribute("aria-valuenow", value.toFixed(2));
+
+    if (notify && k.state) k.state.setNormalisedValue(n);
+  }
+
+  function attachKnobEvents(k) {
+    var dragging = false, lastY = 0;
+
+    k.el.addEventListener("pointerdown", function (e) {
+      dragging = true;
+      lastY = e.clientY;
+      k.el.classList.add("dragging");
+      k.el.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+
+    k.el.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      var dy = lastY - e.clientY;
+      lastY = e.clientY;
+      var sens = e.shiftKey ? 1000 : 200;   /* px of travel for full range */
+      var n = toNorm(k, k.value) + dy / sens;
+      setKnob(k, fromNorm(k, n), true);
+    });
+
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      k.el.classList.remove("dragging");
+      if (e.pointerId !== undefined && k.el.hasPointerCapture(e.pointerId)) {
+        k.el.releasePointerCapture(e.pointerId);
+      }
+    }
+    k.el.addEventListener("pointerup", endDrag);
+    k.el.addEventListener("pointercancel", endDrag);
+
+    k.el.addEventListener("dblclick", function () { setKnob(k, k.def, true); });
+
+    k.el.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var step = (e.shiftKey ? 0.005 : 0.01) * (e.deltaY < 0 ? 1 : -1);
+      setKnob(k, fromNorm(k, toNorm(k, k.value) + step), true);
+    }, { passive: false });
+
+    k.el.addEventListener("keydown", function (e) {
+      var step = e.shiftKey ? 0.005 : 0.02;
+      if (e.key === "ArrowUp" || e.key === "ArrowRight") {
+        setKnob(k, fromNorm(k, toNorm(k, k.value) + step), true); e.preventDefault();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowLeft") {
+        setKnob(k, fromNorm(k, toNorm(k, k.value) - step), true); e.preventDefault();
+      }
+    });
+  }
+
+  /* ---------- bypass ---------- */
+  var bypassed = false;
+  var bypassState = window.Juce.getToggleState("bypass");
+  var bypassBtn = document.getElementById("bypass-btn");
+  var pluginUI = document.getElementById("plugin-ui");
+
+  bypassBtn.addEventListener("click", function () {
+    bypassed = !bypassed;
+    bypassBtn.classList.toggle("on", bypassed);
+    pluginUI.classList.toggle("bypassed", bypassed);
+    if (bypassState) bypassState.setValue(bypassed);
+  });
+
+  /* ---------- presets ---------- */
+  var PRESETS = {
+    init:      { amount: 35, character: 50, mix: 100, output: 0, sc_hpf: 85 },
+    intimate:  { amount: 25, character: 15, mix: 100, output: 0, sc_hpf: 70 },
+    pop:       { amount: 45, character: 55, mix: 100, output: 0, sc_hpf: 85 },
+    rap:       { amount: 60, character: 85, mix: 100, output: 0, sc_hpf: 100 },
+    crush:     { amount: 85, character: 90, mix: 45,  output: 0, sc_hpf: 110 },
+    broadcast: { amount: 40, character: 30, mix: 100, output: 0, sc_hpf: 90 }
+  };
+
+  document.getElementById("preset-select").addEventListener("change", function (e) {
+    var p = PRESETS[e.target.value];
+    if (!p) return;
+    for (var key in p) {
+      if (knobs[key]) setKnob(knobs[key], p[key], true);
+    }
+  });
+
+  /* ---------- gain reduction meter ---------- */
+  var canvas = document.getElementById("gr-canvas");
+  var ctx = canvas.getContext("2d");
+  var MAX_GR = 20;                 /* dB, full scale */
+  var hovering = false;
+  var splitMix = 0;                /* 0 = summed, 1 = per-stage */
+  var grOpto = 0, grFet = 0;       /* displayed (ballistic) values */
+  var readout = document.getElementById("gr-readout");
+
+  canvas.addEventListener("mouseenter", function () { hovering = true; });
+  canvas.addEventListener("mouseleave", function () { hovering = false; });
+
+  function sizeCanvas() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function fillFor(total, x, w) {
+    var g = ctx.createLinearGradient(x, 0, x + w, 0);
+    if (total > 12) { g.addColorStop(0, "#8A2540"); g.addColorStop(1, "#FF4D6D"); }
+    else            { g.addColorStop(0, "#0A7F88"); g.addColorStop(1, "#00F5FF"); }
+    return g;
+  }
+
+  function drawMeter() {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    /* well */
+    ctx.fillStyle = "#12161B";
+    roundRect(0, 0, w, h, 4);
+    ctx.fill();
+
+    var total = Math.min(MAX_GR, grOpto + grFet);
+
+    /* summed bar */
+    if (splitMix < 1) {
+      ctx.globalAlpha = 1 - splitMix;
+      var bh = 16, by = (h - bh) / 2;
+      var bw = (total / MAX_GR) * (w - 16);
+      if (bw > 0.5) {
+        ctx.fillStyle = fillFor(total, 8, w - 16);
+        roundRect(8, by, bw, bh, 3);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    /* per-stage bars */
+    if (splitMix > 0) {
+      ctx.globalAlpha = splitMix;
+      var rows = [
+        { label: "OPTO", v: grOpto, y: 6 },
+        { label: "FET",  v: grFet,  y: 24 }
+      ];
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        ctx.fillStyle = "#7D8894";
+        ctx.font = "8px -apple-system, system-ui, sans-serif";
+        ctx.textBaseline = "middle";
+        ctx.fillText(r.label, 8, r.y + 7);
+        var x0 = 38, bw2 = (r.v / MAX_GR) * (w - 46);
+        ctx.fillStyle = "#1A2027";
+        roundRect(x0, r.y, w - 46, 14, 3);
+        ctx.fill();
+        if (bw2 > 0.5) {
+          ctx.fillStyle = fillFor(r.v, x0, w - 46);
+          roundRect(x0, r.y, bw2, 14, 3);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    /* ticks */
+    ctx.globalAlpha = 0.5 * (1 - splitMix);
+    var ticks = [3, 6, 12, 20];
+    ctx.strokeStyle = "#232A32";
+    ctx.fillStyle = "#7D8894";
+    ctx.font = "8px -apple-system, system-ui, sans-serif";
+    ctx.textBaseline = "top";
+    for (var t = 0; t < ticks.length; t++) {
+      var tx = 8 + (ticks[t] / MAX_GR) * (w - 16);
+      ctx.beginPath();
+      ctx.moveTo(tx, 4); ctx.lineTo(tx, 10);
+      ctx.stroke();
+      ctx.fillText("-" + ticks[t], tx - 6, h - 12);
+    }
+    ctx.globalAlpha = 1;
+
+    readout.textContent = "-" + total.toFixed(1) + " dB";
+    readout.style.color = total > 12 ? "#FF4D6D" : "#E6EDF3";
+  }
+
+  /* ============================================================
+     PREVIEW SIMULATION - REMOVE AT /impl
+     Fakes a vocal envelope so the meter and knobs can be evaluated
+     in a browser. In the plugin, grOpto / grFet are pushed from C++
+     via an atomic-backed event instead.
+     ============================================================ */
+  var simT = 0;
+  function simulate(dt) {
+    simT += dt;
+    var amountN = (knobs.amount ? knobs.amount.value : 35) / 100;
+    var charN   = (knobs.character ? knobs.character.value : 50) / 100;
+
+    /* pseudo vocal envelope: slow phrase + syllable rate + transient spikes */
+    var phrase   = 0.5 + 0.5 * Math.sin(simT * 0.7);
+    var syllable = 0.5 + 0.5 * Math.sin(simT * 5.3 + 1.1);
+    var env      = 0.35 + 0.65 * (0.6 * phrase + 0.4 * syllable);
+    var spike    = Math.pow(Math.max(0, Math.sin(simT * 3.1 + 0.4)), 12);
+
+    var targetOpto = bypassed ? 0 : amountN * (1 - charN * 0.6) * 13 * env;
+    var targetFet  = bypassed ? 0 : amountN * (0.2 + charN * 0.85) * 11 * (0.25 * env + 0.9 * spike);
+
+    /* ballistics: instant attack, ~180ms release */
+    var rel = Math.exp(-dt / 0.18);
+    grOpto = targetOpto > grOpto ? targetOpto : targetOpto + (grOpto - targetOpto) * rel;
+    grFet  = targetFet  > grFet  ? targetFet  : targetFet  + (grFet  - targetFet)  * rel;
+  }
+  /* ================= END PREVIEW SIMULATION ================== */
+
+  /* ---------- animation loop ---------- */
+  var lastT = 0;
+  function frame(t) {
+    var dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0.016;
+    lastT = t;
+
+    var target = hovering ? 1 : 0;
+    splitMix += (target - splitMix) * Math.min(1, dt / 0.18);
+    if (Math.abs(target - splitMix) < 0.002) splitMix = target;
+
+    simulate(dt);           /* REMOVE AT /impl */
+    drawMeter();
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- boot (readyState, not DOMContentLoaded alone) ---------- */
+  function init() {
+    var els = document.querySelectorAll(".knob");
+    for (var i = 0; i < els.length; i++) buildKnob(els[i]);
+    sizeCanvas();
+    window.addEventListener("resize", sizeCanvas);
+    requestAnimationFrame(frame);
+    window.__pluginBooted = true;
+    if (!JUCE_PRESENT) console.log("VRS Vocal Comp - preview mode (no JUCE backend)");
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

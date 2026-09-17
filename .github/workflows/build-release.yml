@@ -11,6 +11,7 @@ on:
           - CloudWash
           - gnarly2
           - nf_gnarly
+          - VictorRSwagVocalComp
           - all
       platforms:
         description: 'Which platforms to build?'
@@ -22,6 +23,10 @@ on:
           - windows
           - macos
           - linux
+      version:
+        description: 'Version number for the Windows installer (e.g. 1.0.0)'
+        required: false
+        default: '1.0.0'
       macos_vst3:
         description: 'macOS: Build VST3?'
         required: false
@@ -88,12 +93,25 @@ jobs:
       - name: Build Standalone
         run: cmake --build build --config Release --target "${{ matrix.plugin }}_Standalone"
 
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Create Windows installer (.exe)
+        shell: pwsh
+        # Non-fatal: a packaging hiccup shouldn't lose the raw VST3/Standalone
+        # artifacts collected below.
+        continue-on-error: true
+        run: |
+          .\scripts\installer\create-windows-installer.ps1 `
+            -PluginName "${{ matrix.plugin }}" `
+            -Version "${{ inputs.version || '1.0.0' }}"
+
       - name: Collect artifacts
         shell: bash
         run: |
           mkdir -p release
           find build -name "*.vst3" -exec cp -R {} release/ \;
-          find build -name "*.exe" -not -path "*/CMakeFiles/*" -exec cp {} release/ \;
+          find build -name "*.exe" -not -path "*/CMakeFiles/*" -not -path "*/build/installer/*" -exec cp {} release/ \;
           echo "Collected:" && ls release/
 
       - name: Upload artifacts
