@@ -84,6 +84,17 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
+      - name: Install WebView2 NuGet package
+        # CMake configure walks every plugin under plugins/ (not just the one
+        # being built), and any of them with NEEDS_WEBVIEW2 TRUE fails
+        # find_package(WebView2) - and aborts configure for ALL plugins - if
+        # this NuGet package isn't present. Install it the way JUCE's own
+        # FindWebView2.cmake documents.
+        shell: pwsh
+        run: |
+          Register-PackageSource -provider NuGet -name nugetRepository -location https://www.nuget.org/api/v2 -Trusted -Force -ErrorAction SilentlyContinue
+          Install-Package Microsoft.Web.WebView2 -Scope CurrentUser -RequiredVersion 1.0.3485.44 -Source nugetRepository -Force
+
       - name: Configure CMake
         # Don't hardcode a "Visual Studio <N> <year>" generator name: the
         # windows-latest runner image's bundled VS version changes over time
